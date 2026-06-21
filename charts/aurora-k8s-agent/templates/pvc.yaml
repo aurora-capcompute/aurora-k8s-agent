@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "aurora-k8s-agent.fullname" . }}
+  name: {{ .Release.Name }}
   labels:
     {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
 spec:

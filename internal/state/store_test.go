@@ -6,10 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
-func TestStorePersistsInboxConversationElevationAndEncryptedTask(t *testing.T) {
+func TestStorePersistsInboxConversationAndEncryptedTask(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "state.db")
 	key := make([]byte, 32)
@@ -39,18 +38,6 @@ func TestStorePersistsInboxConversationElevationAndEncryptedTask(t *testing.T) {
 	}
 	if got, found, _ := store.Conversation(ctx, 1, 2); !found || got.ThreadID != "thread" {
 		t.Fatalf("conversation = %+v, found=%v", got, found)
-	}
-	expires := time.Now().Add(time.Minute).UTC().Truncate(time.Microsecond)
-	if err := store.ArmElevation(ctx, Elevation{
-		UserID: 1, ChatID: 2, Profile: "write", ExpiresAt: expires,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.BindElevation(ctx, 1, 2, "run"); err != nil {
-		t.Fatal(err)
-	}
-	if got, found, _ := store.Elevation(ctx, 1, 2); !found || got.RunID != "run" || got.State != "consumed" {
-		t.Fatalf("elevation = %+v, found=%v", got, found)
 	}
 	if err := store.SaveTaskMessage(ctx, TaskMessage{
 		TaskID: "task", RunID: "run", UserID: 1, ChatID: 2,

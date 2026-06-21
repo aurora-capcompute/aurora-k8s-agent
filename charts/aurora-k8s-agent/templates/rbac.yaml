@@ -3,7 +3,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "aurora-k8s-agent.fullname" . }}
+  name: {{ .Release.Name }}
   labels:
     {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
 rules:
@@ -14,7 +14,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "aurora-k8s-agent.fullname" . }}
+  name: {{ .Release.Name }}
   labels:
     {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
 subjects:
@@ -24,13 +24,13 @@ subjects:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "aurora-k8s-agent.fullname" . }}
+  name: {{ .Release.Name }}
 {{- else }}
 {{- range $namespace := .Values.rbac.targetNamespaces }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "aurora-k8s-agent.fullname" $ }}
+  name: {{ $.Release.Name }}
   namespace: {{ $namespace }}
   labels:
     {{- include "aurora-k8s-agent.labels" $ | nindent 4 }}
@@ -42,7 +42,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "aurora-k8s-agent.fullname" $ }}
+  name: {{ $.Release.Name }}
   namespace: {{ $namespace }}
   labels:
     {{- include "aurora-k8s-agent.labels" $ | nindent 4 }}
@@ -53,7 +53,7 @@ subjects:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "aurora-k8s-agent.fullname" $ }}
+  name: {{ $.Release.Name }}
 ---
 {{- end }}
 {{- end }}

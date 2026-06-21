@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "aurora-k8s-agent.fullname" . }}
+  name: {{ .Release.Name }}
   labels:
     {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
 spec:
@@ -52,11 +52,11 @@ spec:
               value: /var/run/aurora-secrets/task-secret
             - name: AURORA_STATE_KEY_FILE
               value: /var/run/aurora-secrets/state-key
-            - name: {{ .Values.llm.apiKeyEnv }}
+            - name: {{ .Values.llmEnvVar }}
               valueFrom:
                 secretKeyRef:
                   name: {{ include "aurora-k8s-agent.secretName" . }}
-                  key: {{ .Values.secrets.llmAPIKeyKey }}
+                  key: {{ .Values.llmSecretKey }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -91,14 +91,14 @@ spec:
       volumes:
         - name: policy
           configMap:
-            name: {{ include "aurora-k8s-agent.fullname" . }}
+            name: {{ .Release.Name }}
         - name: secrets
           secret:
             secretName: {{ include "aurora-k8s-agent.secretName" . }}
         - name: data
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "aurora-k8s-agent.fullname" . }}
+            claimName: {{ .Release.Name }}
           {{- else }}
           emptyDir: {}
           {{- end }}

@@ -75,27 +75,43 @@ approval cards containing the operation, arguments, summary, and expiry.
 
 ## Install
 
-Create a production Secret:
+Create a Kubernetes Secret with the four required keys:
+
+```sh
+kubectl -n aurora create secret generic aurora-secrets \
+  --from-literal=telegram-bot-token='<BotFather token>' \
+  --from-literal=task-secret="$(openssl rand -hex 32)" \
+  --from-literal=state-key="$(openssl rand -base64 32)" \
+  --from-literal=openai-api-key='<provider API key>'
+```
+
+Or as YAML:
 
 ```yaml
 apiVersion: v1
 kind: Secret
 metadata:
-  name: aurora-agent-secrets
+  name: aurora-secrets
+  namespace: aurora
 type: Opaque
 stringData:
   telegram-bot-token: "<BotFather token>"
-  task-secret: "<long random task HMAC secret>"
-  state-key: "<32 random bytes encoded as base64, or a long passphrase>"
-  openai-api-key: "<provider API key>"
+  task-secret: "<long random string — HMAC secret for durable task tokens>"
+  state-key: "<32 random bytes as base64, or a long passphrase — encrypts Telegram state>"
+  openai-api-key: "<OpenAI or compatible provider API key>"
 ```
+
+| Key | Purpose |
+|-----|---------|
+| `telegram-bot-token` | Telegram Bot API token from @BotFather |
+| `task-secret` | HMAC secret for durable approval task webhook tokens. Must stay stable across restarts. |
+| `state-key` | AES-256 key for encrypting stored Telegram tokens. Base64-encoded 32 bytes, or a passphrase (SHA-256 hashed). |
+| `openai-api-key` | API key for the OpenAI-compatible LLM provider. The key name can be changed via `llmSecretKey` in values. |
 
 Configure users and namespaces in a values file:
 
 ```yaml
-secrets:
-  create: false
-  existingSecret: aurora-agent-secrets
+secretName: aurora-secrets
 
 rbac:
   targetNamespaces: [default, observability]

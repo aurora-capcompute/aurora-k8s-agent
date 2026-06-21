@@ -32,15 +32,6 @@ type Conversation struct {
 	PolicyDigest string
 }
 
-type Elevation struct {
-	UserID    int64
-	ChatID    int64
-	Profile   string
-	State     string
-	RunID     string
-	ExpiresAt time.Time
-}
-
 type TaskMessage struct {
 	TaskID    string
 	RunID     string
@@ -109,26 +100,6 @@ CREATE TABLE IF NOT EXISTS conversations (
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL,
 	PRIMARY KEY(user_id, chat_id)
-);
-CREATE TABLE IF NOT EXISTS elevations (
-	user_id INTEGER NOT NULL,
-	chat_id INTEGER NOT NULL,
-	profile TEXT NOT NULL,
-	state TEXT NOT NULL,
-	run_id TEXT NOT NULL DEFAULT '',
-	expires_at TEXT NOT NULL,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL,
-	PRIMARY KEY(user_id, chat_id)
-);
-CREATE TABLE IF NOT EXISTS elevation_audit (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	user_id INTEGER NOT NULL,
-	chat_id INTEGER NOT NULL,
-	profile TEXT NOT NULL,
-	state TEXT NOT NULL,
-	run_id TEXT NOT NULL DEFAULT '',
-	created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS task_messages (
 	task_id TEXT PRIMARY KEY,
@@ -267,121 +238,6 @@ func (s *Store) Conversations(ctx context.Context) ([]Conversation, error) {
 		result = append(result, value)
 	}
 	return result, rows.Err()
-}
-
-func (s *Store) ArmElevation(ctx context.Context, value Elevation) error {
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `
-INSERT INTO elevations(user_id,chat_id,profile,state,run_id,expires_at,created_at,updated_at)
-VALUES(?,?,?,'armed','',?,?,?)
-ON CONFLICT(user_id,chat_id) DO UPDATE SET profile=excluded.profile,state='armed',
-	run_id='',expires_at=excluded.expires_at,updated_at=excluded.updated_at`,
-		value.UserID, value.ChatID, value.Profile, value.ExpiresAt.UTC().Format(time.RFC3339Nano), now, now); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, `
-INSERT INTO elevation_audit(user_id,chat_id,profile,state,run_id,created_at)
-VALUES(?,?,?,'armed','',?)`, value.UserID, value.ChatID, value.Profile, now); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-func (s *Store) Elevation(ctx context.Context, userID, chatID int64) (Elevation, bool, error) {
-	var value Elevation
-	var expires string
-	err := s.db.QueryRowContext(ctx, `
-SELECT user_id,chat_id,profile,state,run_id,expires_at FROM elevations
-WHERE user_id=? AND chat_id=?`, userID, chatID).Scan(
-		&value.UserID, &value.ChatID, &value.Profile, &value.State, &value.RunID, &expires)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Elevation{}, false, nil
-	}
-	if err != nil {
-		return Elevation{}, false, err
-	}
-	value.ExpiresAt, err = time.Parse(time.RFC3339Nano, expires)
-	return value, err == nil, err
-}
-
-func (s *Store) BindElevation(ctx context.Context, userID, chatID int64, runID string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	var profile string
-	if err := tx.QueryRowContext(ctx, `
-SELECT profile FROM elevations WHERE user_id=? AND chat_id=? AND state IN ('armed','consuming')`,
-		userID, chatID).Scan(&profile); err != nil {
-		return err
-	}
-	result, err := tx.ExecContext(ctx, `
-UPDATE elevations SET state='consumed',run_id=?,updated_at=?
-WHERE user_id=? AND chat_id=? AND state IN ('armed','consuming')`,
-		runID, time.Now().UTC().Format(time.RFC3339Nano), userID, chatID)
-	if err != nil {
-		return err
-	}
-	n, _ := result.RowsAffected()
-	if n != 1 {
-		return errors.New("elevation is not armed")
-	}
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO elevation_audit(user_id,chat_id,profile,state,run_id,created_at)
-VALUES(?,?,?,'consumed',?,?)`, userID, chatID, profile, runID,
-		time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-func (s *Store) BeginElevation(ctx context.Context, userID, chatID int64) error {
-	result, err := s.db.ExecContext(ctx, `
-UPDATE elevations SET state='consuming',updated_at=?
-WHERE user_id=? AND chat_id=? AND state='armed'`,
-		time.Now().UTC().Format(time.RFC3339Nano), userID, chatID)
-	if err != nil {
-		return err
-	}
-	n, _ := result.RowsAffected()
-	if n != 1 {
-		return errors.New("elevation is not armed")
-	}
-	return nil
-}
-
-func (s *Store) ClearElevation(ctx context.Context, userID, chatID int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	var profile, runID string
-	err = tx.QueryRowContext(ctx, `
-SELECT profile,run_id FROM elevations WHERE user_id=? AND chat_id=?`,
-		userID, chatID).Scan(&profile, &runID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	if err == nil {
-		if _, err := tx.ExecContext(ctx, `
-INSERT INTO elevation_audit(user_id,chat_id,profile,state,run_id,created_at)
-VALUES(?,?,?,'revoked',?,?)`, userID, chatID, profile, runID,
-			time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-			return err
-		}
-	}
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM elevations WHERE user_id=? AND chat_id=?`, userID, chatID); err != nil {
-		return err
-	}
-	return tx.Commit()
 }
 
 func (s *Store) SaveTaskMessage(ctx context.Context, task TaskMessage) error {

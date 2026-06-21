@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["image", "policy", "rbac", "secrets"],
+  "required": ["image", "policy", "rbac", "secretName"],
   "properties": {
     "replicaCount": {"type": "integer", "const": 1},
     "image": {
@@ -50,16 +50,6 @@
         }
       }
     },
-    "secrets": {
-      "type": "object",
-      "properties": {
-        "existingSecret": {"type": "string"},
-        "create": {"type": "boolean"},
-        "telegramBotToken": {"type": "string"},
-        "taskSecret": {"type": "string"},
-        "stateKey": {"type": "string"},
-        "llmAPIKey": {"type": "string"}
-      }
-    }
+    "secretName": {"type": "string", "minLength": 1}
   }
 }

@@ -26,7 +26,7 @@ func (testProvider) NewDispatcher(
 	return nil, nil
 }
 
-func TestParseAuthorizesUserAndBuildsProfile(t *testing.T) {
+func TestParseAuthorizesUser(t *testing.T) {
 	raw := []byte(`{
 	  "version": 1,
 	  "users": {
@@ -36,13 +36,6 @@ func TestParseAuthorizesUserAndBuildsProfile(t *testing.T) {
 	        "version": 2,
 	        "brain": "kubernetes-agent",
 	        "capabilities": [{"name": "k8s.get", "settings": {"namespaces": ["default"]}}]
-	      },
-	      "elevation_profiles": {
-	        "write": {
-	          "label": "Write",
-	          "ttl": "5m",
-	          "overrides": [{"name": "k8s.apply", "settings": {"namespaces": ["default"]}}]
-	        }
 	      }
 	    }
 	  }
@@ -55,24 +48,19 @@ func TestParseAuthorizesUserAndBuildsProfile(t *testing.T) {
 	if !ok {
 		t.Fatal("authorized user was rejected")
 	}
-	profile := user.ElevationProfiles["write"]
-	if profile.TTL.String() != "5m0s" {
-		t.Fatalf("TTL = %s", profile.TTL)
-	}
-	if len(profile.Effective.Capabilities) != 2 {
-		t.Fatalf("effective capabilities = %d", len(profile.Effective.Capabilities))
+	if len(user.Manifest.Capabilities) != 1 {
+		t.Fatalf("capabilities = %d", len(user.Manifest.Capabilities))
 	}
 	if _, ok := set.Authorize(42, -1002); ok {
 		t.Fatal("unauthorized chat was accepted")
 	}
 }
 
-func TestParseRejectsInvalidUserAndProfile(t *testing.T) {
+func TestParseRejectsInvalid(t *testing.T) {
 	cases := []string{
 		`{"version":2,"users":{"42":{"allowed_chats":[42],"manifest":{"version":2}}}}`,
 		`{"version":1,"users":{"bad":{"allowed_chats":[42],"manifest":{"version":2}}}}`,
 		`{"version":1,"users":{"42":{"allowed_chats":[],"manifest":{"version":2}}}}`,
-		`{"version":1,"users":{"42":{"allowed_chats":[42],"manifest":{"version":2},"elevation_profiles":{"x":{"overrides":[]}}}}}`,
 	}
 	for _, raw := range cases {
 		if _, err := Parse([]byte(raw), testProvider{}); err == nil {

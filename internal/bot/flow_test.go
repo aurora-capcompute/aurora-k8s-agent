@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -37,9 +36,9 @@ func (flowProvider) NewDispatcher(
 }
 
 type flowRuntime struct {
-	mu        sync.Mutex
-	thread    aurora.ThreadSnapshot
-	overrides []aurora.CapabilityConfig
+	mu      sync.Mutex
+	thread  aurora.ThreadSnapshot
+	created bool
 }
 
 func (r *flowRuntime) CreateThread(manifest aurora.Manifest) (aurora.ThreadSnapshot, error) {
@@ -65,7 +64,7 @@ func (r *flowRuntime) CreateRun(
 ) (aurora.RunSnapshot, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.overrides = append([]aurora.CapabilityConfig(nil), overrides...)
+	r.created = true
 	r.thread.ActiveRunID = "run-1"
 	return aurora.RunSnapshot{
 		ID: "run-1", ThreadID: threadID, Message: message, Status: aurora.RunQueued,
@@ -98,16 +97,13 @@ func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) 
 	return f(request)
 }
 
-func TestPrivilegePickerAppliesProfileToOneRun(t *testing.T) {
+func TestPromptCreatesRun(t *testing.T) {
 	policies, err := policy.Parse([]byte(`{
 	  "version":1,
 	  "users":{
 	    "42":{
 	      "allowed_chats":[42],
-	      "manifest":{"version":2,"brain":"kubernetes-agent","capabilities":[{"name":"k8s.get"}]},
-	      "elevation_profiles":{
-	        "write":{"label":"Write","overrides":[{"name":"k8s.apply","settings":{"require_approval":true}}]}
-	      }
+	      "manifest":{"version":2,"brain":"kubernetes-agent","capabilities":[{"name":"k8s.get"}]}
 	    }
 	  }
 	}`), flowProvider{})
@@ -156,36 +152,15 @@ func TestPrivilegePickerAppliesProfileToOneRun(t *testing.T) {
 	defer service.unsubscribeAll()
 
 	ctx := context.Background()
-	user := &telegram.User{ID: 42}
 	if err := service.handleUpdate(ctx, telegram.Update{Message: &telegram.Message{
-		MessageID: 1, From: user, Chat: telegram.Chat{ID: 42, Type: "private"},
-		Text: "/privileges",
-	}}); err != nil {
-		t.Fatal(err)
-	}
-	callbackMessage := &telegram.Message{
-		MessageID: 11, Chat: telegram.Chat{ID: 42, Type: "private"},
-	}
-	for i, data := range []string{"priv:write", "privc:write"} {
-		if err := service.handleUpdate(ctx, telegram.Update{CallbackQuery: &telegram.CallbackQuery{
-			ID: fmt.Sprintf("callback-%d", i), From: *user, Message: callbackMessage, Data: data,
-		}}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := service.handleUpdate(ctx, telegram.Update{Message: &telegram.Message{
-		MessageID: 2, From: user, Chat: telegram.Chat{ID: 42, Type: "private"},
-		Text: "deploy the application",
+		MessageID: 1, From: &telegram.User{ID: 42}, Chat: telegram.Chat{ID: 42, Type: "private"},
+		Text: "list pods in default",
 	}}); err != nil {
 		t.Fatal(err)
 	}
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
-	if len(runtime.overrides) != 1 || runtime.overrides[0].Name != "k8s.apply" {
-		t.Fatalf("run overrides = %+v", runtime.overrides)
-	}
-	elevation, found, err := store.Elevation(ctx, 42, 42)
-	if err != nil || !found || elevation.State != "consumed" || elevation.RunID != "run-1" {
-		t.Fatalf("elevation = %+v, found=%v, err=%v", elevation, found, err)
+	if !runtime.created {
+		t.Fatal("run was not created")
 	}
 }

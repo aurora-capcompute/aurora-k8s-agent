@@ -8,14 +8,14 @@ import (
 	"aurora-k8s-agent/internal/telegram"
 )
 
-func TestRenderRunCommunicatesPrivilegeRevocation(t *testing.T) {
+func TestRenderRunShowsAnswer(t *testing.T) {
 	text, keyboard := renderRun(aurora.RunSnapshot{
 		ID: "run", Status: aurora.RunCompleted, Answer: "<done>",
 	})
 	if keyboard != nil {
 		t.Fatal("completed run has keyboard")
 	}
-	if !strings.Contains(text, "&lt;done&gt;") || !strings.Contains(text, "privileges revoked") {
+	if !strings.Contains(text, "&lt;done&gt;") || !strings.Contains(text, "Completed") {
 		t.Fatalf("renderRun = %q", text)
 	}
 }

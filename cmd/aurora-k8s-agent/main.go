@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,6 +21,8 @@ import (
 	"aurora-dispatchers-helm/helm"
 	"aurora-dispatchers-k8s/k8s"
 	"aurora-dispatchers-llm/openaillm"
+	"aurora-dispatchers/mcp"
+	"aurora-dispatchers/registry"
 	"aurora-k8s-agent/internal/assembly"
 	"aurora-k8s-agent/internal/bot"
 	"aurora-k8s-agent/internal/policy"
@@ -68,7 +71,16 @@ func run() error {
 		openaillm.Registration{},
 		k8s.Registration{},
 		helm.Registration{},
+		registry.InternetRegistration{},
+		registry.MCPRegistration{},
 	)
+	mcpServers, err := mcpServersFromEnv()
+	if err != nil {
+		return err
+	}
+	if len(mcpServers) > 0 {
+		provider.SetServices(registry.Services{MCPServers: mcpServers})
+	}
 	policies, err := policy.Load(env("AURORA_POLICY_PATH", "/etc/aurora/policy.json"), provider)
 	if err != nil {
 		return err
@@ -197,6 +209,24 @@ func env(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func mcpServersFromEnv() (map[string]mcp.ServerConfig, error) {
+	raw := strings.TrimSpace(os.Getenv("AURORA_MCP_SERVERS"))
+	if raw == "" {
+		return nil, nil
+	}
+	var servers map[string]mcp.ServerConfig
+	if err := json.Unmarshal([]byte(raw), &servers); err != nil {
+		return nil, fmt.Errorf("decode AURORA_MCP_SERVERS: %w", err)
+	}
+	for id, server := range servers {
+		if strings.TrimSpace(server.ID) == "" {
+			server.ID = id
+		}
+		servers[id] = server
+	}
+	return servers, nil
 }
 
 func parseLogLevel(value string) slog.Level {

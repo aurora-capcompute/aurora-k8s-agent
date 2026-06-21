@@ -25,32 +25,35 @@ HTTPServer(("0.0.0.0",8080),H).serve_forever()'
 kubectl -n aurora expose deployment telegram-mock --port 8080
 kubectl -n aurora rollout status deployment/telegram-mock --timeout=120s
 
+kubectl -n aurora create secret generic aurora-smoke-secrets \
+  --from-literal=telegram-bot-token=smoke \
+  --from-literal=task-secret=smoke-task-secret \
+  --from-literal=state-key=smoke-state-key \
+  --from-literal=openai-api-key=smoke
+
 helm upgrade --install aurora charts/aurora-k8s-agent \
   --namespace aurora \
   --set image.repository="${image%:*}" \
   --set image.tag="${image##*:}" \
   --set image.pullPolicy=Never \
-  --set secrets.telegramBotToken=smoke \
-  --set secrets.taskSecret=smoke-task-secret \
-  --set secrets.stateKey=smoke-state-key \
-  --set secrets.llmAPIKey=smoke \
+  --set secretName=aurora-smoke-secrets \
   --set 'extraEnv[0].name=TELEGRAM_API_BASE_URL' \
   --set 'extraEnv[0].value=http://telegram-mock.aurora.svc:8080'
 
-kubectl -n aurora rollout status deployment/aurora-aurora-k8s-agent --timeout=120s
+kubectl -n aurora rollout status deployment/aurora --timeout=120s
 kubectl -n aurora get --raw \
   "/api/v1/namespaces/aurora/pods/$(kubectl -n aurora get pod -l app.kubernetes.io/instance=aurora -o jsonpath='{.items[0].metadata.name}'):8080/proxy/readyz" |
   grep -q ready
 
 kubectl auth can-i list pods \
   --namespace default \
-  --as system:serviceaccount:aurora:aurora-aurora-k8s-agent
+  --as system:serviceaccount:aurora:aurora
 kubectl auth can-i create deployments.apps \
   --namespace default \
-  --as system:serviceaccount:aurora:aurora-aurora-k8s-agent
+  --as system:serviceaccount:aurora:aurora
 if kubectl auth can-i create deployments.apps \
   --namespace kube-system \
-  --as system:serviceaccount:aurora:aurora-aurora-k8s-agent | grep -q '^yes$'; then
+  --as system:serviceaccount:aurora:aurora | grep -q '^yes$'; then
   echo "namespace RBAC isolation failed" >&2
   exit 1
 fi

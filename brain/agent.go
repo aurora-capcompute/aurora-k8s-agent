@@ -163,7 +163,7 @@ func runAgent() error {
 			results = append(results, item)
 		}
 		raw, _ := json.Marshal(results)
-		messages = append(messages, message{Role: "tool", Content: string(raw)})
+		messages = append(messages, message{Role: "user", Content: string(raw)})
 	}
 	return errors.New("agent exceeded the maximum tool turns")
 }

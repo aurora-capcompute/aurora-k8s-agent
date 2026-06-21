@@ -23,6 +23,10 @@ func NewProvider(registrations ...registry.Registration) *Provider {
 	return &Provider{registry: registry.New(registrations...)}
 }
 
+func (p *Provider) SetServices(services registry.Services) {
+	p.services = services
+}
+
 func (p *Provider) Normalize(name string, settings json.RawMessage) (json.RawMessage, error) {
 	return p.registry.Normalize(name, settings)
 }

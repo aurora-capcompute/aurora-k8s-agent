@@ -2,7 +2,7 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "aurora-k8s-agent.fullname" . }}
+  name: {{ .Release.Name }}
   labels:
     {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
 spec:

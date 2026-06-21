@@ -30,16 +30,10 @@ jobs:
       - run: go vet ./...
       - run: >-
           helm lint charts/aurora-k8s-agent
-          --set secrets.telegramBotToken=test
-          --set secrets.taskSecret=test-task-secret
-          --set secrets.stateKey=test-state-key
-          --set secrets.llmAPIKey=test
+          --set secretName=test-secret
       - run: >-
           helm template aurora charts/aurora-k8s-agent
-          --set secrets.telegramBotToken=test
-          --set secrets.taskSecret=test-task-secret
-          --set secrets.stateKey=test-state-key
-          --set secrets.llmAPIKey=test
+          --set secretName=test-secret
           > /tmp/rendered.yaml
 
   container:

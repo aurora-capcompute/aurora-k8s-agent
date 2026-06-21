@@ -1,0 +1,95 @@
+package bot
+
+import (
+	"context"
+
+	"aurora-capcompute/aurora"
+	"aurora-k8s-agent/internal/state"
+	"aurora-k8s-agent/internal/telegram"
+)
+
+func (s *Service) handleEvent(ctx context.Context, conversation state.Conversation, event aurora.Event) {
+	switch event.Type {
+	case "run.updated":
+		var run aurora.RunSnapshot
+		if decodeEvent(event.Data, &run) == nil {
+			s.updateRunMessage(ctx, run)
+		}
+	case "task.created":
+		var task aurora.TaskSnapshot
+		if decodeEvent(event.Data, &task) == nil {
+			s.createTaskMessage(ctx, conversation, task)
+		}
+	case "task.updated":
+		var task aurora.TaskSnapshot
+		if decodeEvent(event.Data, &task) == nil {
+			s.updateTaskMessage(ctx, task)
+		}
+	}
+}
+
+func (s *Service) updateRunMessage(ctx context.Context, run aurora.RunSnapshot) {
+	message, found, err := s.store.RunMessage(ctx, run.ID)
+	if err != nil || !found {
+		return
+	}
+	previousState := message.State
+	text, keyboard := renderRun(run)
+	longAnswer := run.Status == aurora.RunCompleted && len(run.Answer) > 3000
+	if longAnswer {
+		text = "✅ <b>Completed</b>\nThe full answer follows in separate messages."
+	}
+	if err := s.client.EditMessage(ctx, message.ChatID, message.MessageID, text, keyboard); err != nil {
+		s.logger.Debug("edit run message", "run_id", run.ID, "error", err)
+	}
+	_ = s.store.SaveRunMessage(ctx, state.RunMessage{
+		RunID: run.ID, UserID: message.UserID, ChatID: message.ChatID,
+		MessageID: message.MessageID, State: string(run.Status),
+	})
+	if longAnswer && previousState != string(aurora.RunCompleted) {
+		for _, chunk := range chunks(run.Answer, 3500) {
+			if _, err := s.client.SendMessage(ctx, message.ChatID, escape(chunk), nil); err != nil {
+				s.logger.Warn("send completed answer chunk", "run_id", run.ID, "error", err)
+				break
+			}
+		}
+	}
+}
+
+func (s *Service) createTaskMessage(
+	ctx context.Context,
+	conversation state.Conversation,
+	task aurora.TaskSnapshot,
+) {
+	if _, found, _ := s.store.TaskMessage(ctx, task.ID); found {
+		return
+	}
+	text := renderTask(task)
+	keyboard := &telegram.InlineKeyboardMarkup{InlineKeyboard: [][]telegram.InlineKeyboardButton{{
+		{Text: "✅ Approve", CallbackData: "task:a:" + task.ID},
+		{Text: "⛔ Deny", CallbackData: "task:d:" + task.ID},
+	}}}
+	sent, err := s.client.SendMessage(ctx, conversation.ChatID, text, keyboard)
+	if err != nil {
+		s.logger.Error("send approval card", "task_id", task.ID, "error", err)
+		return
+	}
+	_ = s.store.SaveTaskMessage(ctx, state.TaskMessage{
+		TaskID: task.ID, RunID: task.RunID, UserID: conversation.UserID,
+		ChatID: conversation.ChatID, MessageID: sent.MessageID,
+		Token: task.WebhookToken, State: string(task.State),
+	})
+}
+
+func (s *Service) updateTaskMessage(ctx context.Context, task aurora.TaskSnapshot) {
+	message, found, err := s.store.TaskMessage(ctx, task.ID)
+	if err != nil || !found {
+		return
+	}
+	if task.State != aurora.TaskStatePending {
+		_ = s.client.EditMessage(ctx, message.ChatID, message.MessageID,
+			decisionIcon(task.State)+" <b>"+escape(title(string(task.State)))+"</b>\n"+
+				escape(task.Summary), nil)
+	}
+	_ = s.store.SetTaskState(ctx, task.ID, string(task.State))
+}

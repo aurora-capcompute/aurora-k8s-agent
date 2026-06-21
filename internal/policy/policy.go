@@ -7,11 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
-	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"aurora-capcompute/aurora"
 )
@@ -22,40 +19,20 @@ type File struct {
 }
 
 type UserPolicy struct {
-	AllowedChats      []int64            `json:"allowed_chats"`
-	Manifest          aurora.Manifest    `json:"manifest"`
-	ElevationProfiles map[string]Profile `json:"elevation_profiles,omitempty"`
-}
-
-type Profile struct {
-	Label       string                    `json:"label"`
-	Description string                    `json:"description,omitempty"`
-	TTL         string                    `json:"ttl,omitempty"`
-	Overrides   []aurora.CapabilityConfig `json:"overrides"`
+	AllowedChats []int64         `json:"allowed_chats"`
+	Manifest     aurora.Manifest `json:"manifest"`
 }
 
 type User struct {
-	ID                int64
-	AllowedChats      map[int64]struct{}
-	Manifest          aurora.Manifest
-	ElevationProfiles map[string]ValidatedProfile
-	Digest            string
-}
-
-type ValidatedProfile struct {
-	Name        string
-	Label       string
-	Description string
-	TTL         time.Duration
-	Overrides   []aurora.CapabilityConfig
-	Effective   aurora.Manifest
+	ID           int64
+	AllowedChats map[int64]struct{}
+	Manifest     aurora.Manifest
+	Digest       string
 }
 
 type Set struct {
 	users map[int64]User
 }
-
-var profileNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,40}$`)
 
 func Load(path string, provider aurora.DispatcherProvider) (*Set, error) {
 	raw, err := os.ReadFile(path)
@@ -98,68 +75,11 @@ func Parse(raw []byte, provider aurora.DispatcherProvider) (*Set, error) {
 		if len(chats) == 0 {
 			return nil, fmt.Errorf("user %d must allow at least one chat", id)
 		}
-		profiles := make(map[string]ValidatedProfile, len(configured.ElevationProfiles))
-		names := make([]string, 0, len(configured.ElevationProfiles))
-		cleanNames := make(map[string]struct{}, len(configured.ElevationProfiles))
-		for name := range configured.ElevationProfiles {
-			clean := strings.TrimSpace(name)
-			if _, exists := cleanNames[clean]; exists {
-				return nil, fmt.Errorf("user %d has duplicate elevation profile %q", id, clean)
-			}
-			cleanNames[clean] = struct{}{}
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			profile := configured.ElevationProfiles[name]
-			name = strings.TrimSpace(name)
-			if !profileNamePattern.MatchString(name) || len(profile.Overrides) == 0 {
-				return nil, fmt.Errorf("user %d has invalid empty elevation profile", id)
-			}
-			seenCapabilities := make(map[string]struct{}, len(profile.Overrides))
-			for _, override := range profile.Overrides {
-				if _, exists := seenCapabilities[override.Name]; exists {
-					return nil, fmt.Errorf("user %d profile %q repeats capability %q", id, name, override.Name)
-				}
-				seenCapabilities[override.Name] = struct{}{}
-			}
-			effective, err := aurora.EffectiveManifest(manifest, profile.Overrides, provider)
-			if err != nil {
-				return nil, fmt.Errorf("user %d profile %q: %w", id, name, err)
-			}
-			ttl := 10 * time.Minute
-			if profile.TTL != "" {
-				ttl, err = time.ParseDuration(profile.TTL)
-				if err != nil || ttl <= 0 {
-					return nil, fmt.Errorf("user %d profile %q has invalid ttl", id, name)
-				}
-			}
-			label := strings.TrimSpace(profile.Label)
-			if label == "" {
-				label = name
-			}
-			normalized := make([]aurora.CapabilityConfig, 0, len(profile.Overrides))
-			for _, override := range profile.Overrides {
-				for _, capability := range effective.Capabilities {
-					if capability.Name == override.Name {
-						normalized = append(normalized, capability)
-						break
-					}
-				}
-			}
-			profiles[name] = ValidatedProfile{
-				Name: name, Label: label, Description: strings.TrimSpace(profile.Description),
-				TTL: ttl, Overrides: normalized, Effective: effective,
-			}
-		}
-		digestInput, _ := json.Marshal(struct {
-			Manifest aurora.Manifest
-			Profiles map[string]ValidatedProfile
-		}{manifest, profiles})
+		digestInput, _ := json.Marshal(manifest)
 		sum := sha256.Sum256(digestInput)
 		set.users[id] = User{
 			ID: id, AllowedChats: chats, Manifest: manifest,
-			ElevationProfiles: profiles, Digest: hex.EncodeToString(sum[:]),
+			Digest: hex.EncodeToString(sum[:]),
 		}
 	}
 	return set, nil

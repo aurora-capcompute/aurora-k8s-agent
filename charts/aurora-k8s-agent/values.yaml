@@ -6,8 +6,6 @@ image:
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
-nameOverride: ""
-fullnameOverride: ""
 
 serviceAccount:
   create: true
@@ -75,19 +73,11 @@ policy:
             - name: helm.uninstall
               settings: {namespaces: [default], require_approval: true}
 
-secrets:
-  # Prefer existingSecret in production. It must contain telegram-bot-token,
-  # task-secret, state-key, and the configured LLM key.
-  existingSecret: ""
-  create: true
-  telegramBotToken: ""
-  taskSecret: ""
-  stateKey: ""
-  llmAPIKey: ""
-  llmAPIKeyKey: openai-api-key
-
-llm:
-  apiKeyEnv: OPENAI_API_KEY
+# Secret must contain: telegram-bot-token, task-secret, state-key,
+# and the LLM API key under the key named by llmSecretKey.
+secretName: ""
+llmSecretKey: openai-api-key
+llmEnvVar: OPENAI_API_KEY
 
 persistence:
   enabled: true
