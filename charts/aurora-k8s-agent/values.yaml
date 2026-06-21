@@ -1,0 +1,132 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/aurora-capcompute/aurora-k8s-agent
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  create: true
+  # Roles and RoleBindings are created in every listed namespace.
+  targetNamespaces:
+    - default
+  # Cluster-scoped access is deliberately disabled by default.
+  clusterWide: false
+
+policy:
+  # Keys are Telegram numeric user IDs represented as strings.
+  users:
+    "123456789":
+      allowed_chats:
+        - 123456789
+      manifest:
+        version: 2
+        brain: kubernetes-agent
+        system_prompt: >-
+          Operate conservatively. Inspect current state first, summarize intended
+          mutations, and never read Kubernetes Secrets.
+        capabilities:
+          - name: openai.chat
+            settings:
+              base_url: https://api.openai.com/v1
+              api_key_env: OPENAI_API_KEY
+              default_model: gpt-5.5
+              allowed_models: [gpt-5.5]
+              require_approval: false
+          - name: k8s.get
+            settings: {namespaces: [default]}
+          - name: k8s.list
+            settings: {namespaces: [default]}
+          - name: k8s.logs
+            settings: {namespaces: [default]}
+          - name: k8s.events
+            settings: {namespaces: [default]}
+          - name: helm.list
+            settings: {namespaces: [default]}
+          - name: helm.status
+            settings: {namespaces: [default]}
+          - name: helm.get_values
+            settings: {namespaces: [default]}
+      elevation_profiles:
+        default-write:
+          label: Default namespace write
+          description: Apply/delete Kubernetes resources and mutate Helm releases in default.
+          ttl: 10m
+          overrides:
+            - name: k8s.apply
+              settings: {namespaces: [default], require_approval: true}
+            - name: k8s.delete
+              settings: {namespaces: [default], require_approval: true}
+            - name: helm.install
+              settings: {namespaces: [default], charts: [], require_approval: true}
+            - name: helm.upgrade
+              settings: {namespaces: [default], charts: [], require_approval: true}
+            - name: helm.rollback
+              settings: {namespaces: [default], require_approval: true}
+            - name: helm.uninstall
+              settings: {namespaces: [default], require_approval: true}
+
+secrets:
+  # Prefer existingSecret in production. It must contain telegram-bot-token,
+  # task-secret, state-key, and the configured LLM key.
+  existingSecret: ""
+  create: true
+  telegramBotToken: ""
+  taskSecret: ""
+  stateKey: ""
+  llmAPIKey: ""
+  llmAPIKeyKey: openai-api-key
+
+llm:
+  apiKeyEnv: OPENAI_API_KEY
+
+persistence:
+  enabled: true
+  storageClass: ""
+  accessModes: [ReadWriteOnce]
+  size: 2Gi
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext:
+  fsGroup: 65532
+  fsGroupChangePolicy: OnRootMismatch
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+networkPolicy:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: true
+
+extraEnv: []

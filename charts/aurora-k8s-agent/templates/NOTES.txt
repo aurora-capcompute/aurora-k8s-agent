@@ -1,0 +1,11 @@
+Aurora Kubernetes agent has been installed.
+
+The agent uses Telegram long polling and exposes only health endpoints.
+Check readiness:
+
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}
+
+Configured target namespaces:
+{{- range .Values.rbac.targetNamespaces }}
+  - {{ . }}
+{{- end }}

@@ -1,0 +1,60 @@
+{{- if .Values.rbac.create }}
+{{- if .Values.rbac.clusterWide }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "aurora-k8s-agent.fullname" . }}
+  labels:
+    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "aurora-k8s-agent.fullname" . }}
+  labels:
+    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "aurora-k8s-agent.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "aurora-k8s-agent.fullname" . }}
+{{- else }}
+{{- range $namespace := .Values.rbac.targetNamespaces }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "aurora-k8s-agent.fullname" $ }}
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "aurora-k8s-agent.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "aurora-k8s-agent.fullname" $ }}
+  namespace: {{ $namespace }}
+  labels:
+    {{- include "aurora-k8s-agent.labels" $ | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "aurora-k8s-agent.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "aurora-k8s-agent.fullname" $ }}
+---
+{{- end }}
+{{- end }}
+{{- end }}

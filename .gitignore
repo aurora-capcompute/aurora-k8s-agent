@@ -1,0 +1,9 @@
+/bin/
+/dist/
+/brain/*.wasm
+/internal/assembly/kubernetes-agent.wasm
+*.db
+*.db-shm
+*.db-wal
+.env
+.codebase-memory/

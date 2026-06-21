@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["image", "policy", "rbac", "secrets"],
+  "properties": {
+    "replicaCount": {"type": "integer", "const": 1},
+    "image": {
+      "type": "object",
+      "required": ["repository"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "tag": {"type": "string"},
+        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "required": ["targetNamespaces"],
+      "properties": {
+        "create": {"type": "boolean"},
+        "targetNamespaces": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "clusterWide": {"type": "boolean"}
+      }
+    },
+    "policy": {
+      "type": "object",
+      "required": ["users"],
+      "properties": {
+        "users": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["allowed_chats", "manifest"],
+            "properties": {
+              "allowed_chats": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "integer"}
+              },
+              "manifest": {"type": "object"},
+              "elevation_profiles": {"type": "object"}
+            }
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "properties": {
+        "existingSecret": {"type": "string"},
+        "create": {"type": "boolean"},
+        "telegramBotToken": {"type": "string"},
+        "taskSecret": {"type": "string"},
+        "stateKey": {"type": "string"},
+        "llmAPIKey": {"type": "string"}
+      }
+    }
+  }
+}
