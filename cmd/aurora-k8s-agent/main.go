@@ -73,6 +73,7 @@ func run() error {
 		helm.Registration{},
 		registry.InternetRegistration{},
 		registry.MCPRegistration{},
+		registry.AuroraLogRegistration{},
 	)
 	mcpServers, err := mcpServersFromEnv()
 	if err != nil {
