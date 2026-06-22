@@ -9,6 +9,7 @@ import (
 )
 
 func (s *Service) handleEvent(ctx context.Context, conversation state.Conversation, event aurora.Event) {
+	s.logger.Info("handleEvent", "type", event.Type, "thread", conversation.ThreadID)
 	switch event.Type {
 	case "run.updated":
 		var run aurora.RunSnapshot
