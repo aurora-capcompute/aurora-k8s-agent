@@ -25,6 +25,22 @@ func (s *Service) handleEvent(ctx context.Context, conversation state.Conversati
 		if decodeEvent(event.Data, &task) == nil {
 			s.updateTaskMessage(ctx, task)
 		}
+	case "journal.appended":
+		var entry aurora.JournalEvent
+		if decodeEvent(event.Data, &entry) == nil {
+			s.updateRunProgress(ctx, entry)
+		}
+	}
+}
+
+func (s *Service) updateRunProgress(ctx context.Context, entry aurora.JournalEvent) {
+	message, found, err := s.store.RunMessage(ctx, entry.RunID)
+	if err != nil || !found || message.State != string(aurora.RunRunning) {
+		return
+	}
+	text := renderProgress(entry)
+	if err := s.client.EditMessage(ctx, message.ChatID, message.MessageID, text, stopKeyboard(entry.RunID)); err != nil {
+		s.logger.Debug("edit progress", "run_id", entry.RunID, "error", err)
 	}
 }
 
