@@ -2,7 +2,6 @@ package bot
 
 import (
 	"encoding/json"
-	"fmt"
 	"html"
 	"strings"
 	"time"
@@ -37,35 +36,6 @@ func renderTask(task aurora.TaskSnapshot) string {
 		"<b>Operation:</b> <code>" + escape(task.Call.Name) + "</code>\n" +
 		"<b>Request:</b> <code>" + escape(shorten(redactedJSON(task.Call.Args), 1200)) + "</code>\n\n" +
 		escape(task.Summary) + "\n\nTask expires " + formatExpiry(task.ExpiresAt) + "."
-}
-
-func renderProgress(entry aurora.JournalEvent) string {
-	icon := "✓"
-	if entry.OutcomeStatus == "failed" {
-		icon = "✗"
-	}
-	detail := ""
-	if entry.OutcomeStatus == "result" && entry.OutcomeSize > 0 {
-		detail = formatBytes(entry.OutcomeSize)
-	} else if entry.OutcomeStatus == "failed" {
-		detail = "failed"
-	}
-	line := icon + " <code>" + escape(entry.Call) + "</code>"
-	if detail != "" {
-		line += " <i>(" + detail + ")</i>"
-	}
-	return "🧠 <b>Working…</b>\n\n" + line
-}
-
-func formatBytes(n int) string {
-	switch {
-	case n >= 1<<20:
-		return fmt.Sprintf("%.1fMB", float64(n)/float64(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%dKB", n/(1<<10))
-	default:
-		return fmt.Sprintf("%dB", n)
-	}
 }
 
 func stopKeyboard(runID string) *telegram.InlineKeyboardMarkup {

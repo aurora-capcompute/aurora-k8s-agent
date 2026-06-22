@@ -26,28 +26,22 @@ func (s *Service) handleEvent(ctx context.Context, conversation state.Conversati
 		if decodeEvent(event.Data, &task) == nil {
 			s.updateTaskMessage(ctx, task)
 		}
-	case "journal.appended":
-		var entry aurora.JournalEvent
-		if decodeEvent(event.Data, &entry) == nil {
-			s.updateRunProgress(ctx, entry)
+	case "progress":
+		var progress aurora.ProgressEvent
+		if decodeEvent(event.Data, &progress) == nil {
+			s.updateRunProgress(ctx, progress)
 		}
 	}
 }
 
-func (s *Service) updateRunProgress(ctx context.Context, entry aurora.JournalEvent) {
-	message, found, err := s.store.RunMessage(ctx, entry.RunID)
-	if err != nil || !found {
-		s.logger.Info("progress: run message not found", "run_id", entry.RunID, "found", found, "err", err)
+func (s *Service) updateRunProgress(ctx context.Context, progress aurora.ProgressEvent) {
+	message, found, err := s.store.RunMessage(ctx, progress.RunID)
+	if err != nil || !found || message.State != string(aurora.RunRunning) {
 		return
 	}
-	if message.State != string(aurora.RunRunning) {
-		s.logger.Info("progress: skipped, state not running", "run_id", entry.RunID, "state", message.State, "call", entry.Call)
-		return
-	}
-	s.logger.Info("progress: updating", "run_id", entry.RunID, "call", entry.Call, "outcome", entry.OutcomeStatus)
-	text := renderProgress(entry)
-	if err := s.client.EditMessage(ctx, message.ChatID, message.MessageID, text, stopKeyboard(entry.RunID)); err != nil {
-		s.logger.Debug("edit progress", "run_id", entry.RunID, "error", err)
+	text := "🧠 <b>Working…</b>\n\n" + escape(progress.Message)
+	if err := s.client.EditMessage(ctx, message.ChatID, message.MessageID, text, stopKeyboard(progress.RunID)); err != nil {
+		s.logger.Debug("edit progress", "run_id", progress.RunID, "error", err)
 	}
 }
 
