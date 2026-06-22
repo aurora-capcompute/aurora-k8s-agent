@@ -35,9 +35,15 @@ func (s *Service) handleEvent(ctx context.Context, conversation state.Conversati
 
 func (s *Service) updateRunProgress(ctx context.Context, entry aurora.JournalEvent) {
 	message, found, err := s.store.RunMessage(ctx, entry.RunID)
-	if err != nil || !found || message.State != string(aurora.RunRunning) {
+	if err != nil || !found {
+		s.logger.Info("progress: run message not found", "run_id", entry.RunID, "found", found, "err", err)
 		return
 	}
+	if message.State != string(aurora.RunRunning) {
+		s.logger.Info("progress: skipped, state not running", "run_id", entry.RunID, "state", message.State, "call", entry.Call)
+		return
+	}
+	s.logger.Info("progress: updating", "run_id", entry.RunID, "call", entry.Call, "outcome", entry.OutcomeStatus)
 	text := renderProgress(entry)
 	if err := s.client.EditMessage(ctx, message.ChatID, message.MessageID, text, stopKeyboard(entry.RunID)); err != nil {
 		s.logger.Debug("edit progress", "run_id", entry.RunID, "error", err)
