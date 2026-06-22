@@ -150,6 +150,7 @@ func runAgent() error {
 				})
 				continue
 			}
+			emitProgress(requested.Action, requested.Content)
 			response, err := dispatch(call{Name: requested.Action, Args: requested.Content})
 			if err != nil {
 				return err
@@ -245,6 +246,46 @@ func decodeActions(content string) (actionBatch, error) {
 		}
 	}
 	return batch, nil
+}
+
+func emitProgress(action string, content json.RawMessage) {
+	summary := progressSummary(action, content)
+	msg, _ := json.Marshal(map[string]string{"message": summary})
+	dispatch(call{Name: "aurora.log", Args: msg})
+}
+
+func progressSummary(action string, content json.RawMessage) string {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(content, &fields) != nil {
+		return "⚙ " + action
+	}
+	if strings.HasPrefix(action, "call.") {
+		if msg, ok := fields["message"]; ok {
+			var s string
+			if json.Unmarshal(msg, &s) == nil && len(s) > 0 {
+				if len(s) > 80 {
+					s = s[:80] + "…"
+				}
+				return "🔀 " + action + ": " + s
+			}
+		}
+		return "🔀 " + action
+	}
+	if strings.HasPrefix(action, "k8s.") || strings.HasPrefix(action, "helm.") {
+		var parts []string
+		for _, key := range []string{"kind", "namespace", "name", "release", "chart"} {
+			if raw, ok := fields[key]; ok {
+				var s string
+				if json.Unmarshal(raw, &s) == nil && s != "" {
+					parts = append(parts, s)
+				}
+			}
+		}
+		if len(parts) > 0 {
+			return "⚙ " + action + " " + strings.Join(parts, "/")
+		}
+	}
+	return "⚙ " + action
 }
 
 func dispatch(request call) (hostResponse, error) {
