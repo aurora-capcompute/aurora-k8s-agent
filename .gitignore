@@ -7,5 +7,4 @@
 *.db-wal
 .env
 .codebase-memory/
-deploy.sh
 deploy-values.yaml

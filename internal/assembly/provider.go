@@ -31,6 +31,10 @@ func (p *Provider) Normalize(name string, settings json.RawMessage) (json.RawMes
 	return p.registry.Normalize(name, settings)
 }
 
+func (p *Provider) IsSubset(name string, parent, child json.RawMessage) error {
+	return p.registry.IsSubset(name, parent, child)
+}
+
 func (p *Provider) NewDispatcher(
 	ctx context.Context,
 	_ aurora.RunContext,

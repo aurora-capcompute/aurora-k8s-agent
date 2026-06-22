@@ -28,8 +28,9 @@ policy:
         version: 2
         brain: kubernetes-agent
         system_prompt: >-
-          Operate conservatively. Inspect current state first, summarize intended
-          mutations, and never read Kubernetes Secrets.
+          You are Aurora, a Kubernetes operator. Inspect current state before
+          making changes. Summarize intended mutations. Never read Secrets.
+          Delegate read-only reconnaissance to your child brains when useful.
         capabilities:
           - name: openai.chat
             settings:
@@ -46,12 +47,61 @@ policy:
             settings: {namespaces: [default]}
           - name: k8s.events
             settings: {namespaces: [default]}
+          - name: k8s.apply
+            settings: {namespaces: [default], require_approval: true}
+          - name: k8s.delete
+            settings: {namespaces: [default], require_approval: true}
           - name: helm.list
             settings: {namespaces: [default]}
           - name: helm.status
             settings: {namespaces: [default]}
           - name: helm.get_values
             settings: {namespaces: [default]}
+          - name: helm.upgrade
+            settings: {namespaces: [default], require_approval: true}
+          - name: helm.uninstall
+            settings: {namespaces: [default], require_approval: true}
+        children:
+          - name: k8s-scout
+            brain: kubernetes-agent
+            system_prompt: >-
+              You are a Kubernetes read-only scout. Gather information about
+              resources, pods, logs, and events. Report findings concisely.
+              Do not attempt mutations.
+            capabilities:
+              - name: openai.chat
+                settings:
+                  base_url: https://api.openai.com/v1
+                  api_key_env: OPENAI_API_KEY
+                  default_model: gpt-5.5
+                  allowed_models: [gpt-5.5]
+              - name: k8s.get
+                settings: {namespaces: [default]}
+              - name: k8s.list
+                settings: {namespaces: [default]}
+              - name: k8s.logs
+                settings: {namespaces: [default]}
+              - name: k8s.events
+                settings: {namespaces: [default]}
+          - name: helm-scout
+            brain: kubernetes-agent
+            system_prompt: >-
+              You are a Helm read-only scout. List releases, check statuses,
+              and inspect values. Report findings concisely. Do not install,
+              upgrade, or uninstall releases.
+            capabilities:
+              - name: openai.chat
+                settings:
+                  base_url: https://api.openai.com/v1
+                  api_key_env: OPENAI_API_KEY
+                  default_model: gpt-5.5
+                  allowed_models: [gpt-5.5]
+              - name: helm.list
+                settings: {namespaces: [default]}
+              - name: helm.status
+                settings: {namespaces: [default]}
+              - name: helm.get_values
+                settings: {namespaces: [default]}
 
 # Secret must contain: telegram-bot-token, task-secret, state-key,
 # and the LLM API key under the key named by llmSecretKey.
