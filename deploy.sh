@@ -82,12 +82,14 @@ case "$RUNTIME" in
 esac
 
 echo "=== 6. Install with Helm ==="
+DEPLOY_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 $HELM upgrade --install "$RELEASE" ./charts/aurora-k8s-agent \
   --namespace "$NAMESPACE" \
   -f "$VALUES_FILE" \
   --set image.repository="${IMAGE%:*}" \
   --set image.tag="${IMAGE_TAG}" \
-  --set image.pullPolicy=Never
+  --set image.pullPolicy=Never \
+  --set "podAnnotations.aurora\\.dev/deployed-at=${DEPLOY_TS}"
 
 echo "=== 7. Wait for rollout ==="
 $KUBECTL -n "$NAMESPACE" rollout status deployment/"$RELEASE" --timeout=120s
