@@ -201,7 +201,10 @@ func systemPrompt(custom string, capabilities []capability) (string, map[string]
 }
 
 func chat(messages []message) (string, error) {
-	payload, err := json.Marshal(map[string]any{"messages": messages})
+	payload, err := json.Marshal(map[string]any{
+		"messages":        messages,
+		"response_format": map[string]string{"type": "json_object"},
+	})
 	if err != nil {
 		return "", err
 	}
