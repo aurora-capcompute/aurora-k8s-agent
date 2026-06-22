@@ -118,19 +118,25 @@ func runAgent() error {
 	messages = append(messages, in.History...)
 	messages = append(messages, message{Role: "user", Content: in.Message})
 
-	for turn := 0; turn < 24; turn++ {
+	parseErrors := 0
+	for turn := 0; turn < 12; turn++ {
 		content, err := chat(messages)
 		if err != nil {
 			return err
 		}
 		batch, err := decodeActions(content)
 		if err != nil {
+			parseErrors++
+			if parseErrors >= 3 {
+				return pdk.OutputJSON(output{Status: "completed", Answer: content})
+			}
 			messages = append(messages,
 				message{Role: "assistant", Content: content},
 				message{Role: "user", Content: "Return only the required compact JSON action object. Error: " + err.Error()},
 			)
 			continue
 		}
+		parseErrors = 0
 		if len(batch.Actions) == 1 && batch.Actions[0].Action == "final" {
 			var final finalContent
 			if err := json.Unmarshal(batch.Actions[0].Content, &final); err != nil || strings.TrimSpace(final.Answer) == "" {
@@ -201,10 +207,7 @@ func systemPrompt(custom string, capabilities []capability) (string, map[string]
 }
 
 func chat(messages []message) (string, error) {
-	payload, err := json.Marshal(map[string]any{
-		"messages":        messages,
-		"response_format": map[string]string{"type": "json_object"},
-	})
+	payload, err := json.Marshal(map[string]any{"messages": messages})
 	if err != nil {
 		return "", err
 	}
