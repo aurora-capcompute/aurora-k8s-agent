@@ -61,6 +61,7 @@ func TestParseRejectsInvalid(t *testing.T) {
 		`{"version":2,"users":{"42":{"allowed_chats":[42],"manifest":{"version":2}}}}`,
 		`{"version":1,"users":{"bad":{"allowed_chats":[42],"manifest":{"version":2}}}}`,
 		`{"version":1,"users":{"42":{"allowed_chats":[],"manifest":{"version":2}}}}`,
+		`{"version":1,"users":{"42":{"allowed_chats":[42],"manifest":{"version":2},"elevation_profiles":{}}}}`,
 	}
 	for _, raw := range cases {
 		if _, err := Parse([]byte(raw), testProvider{}); err == nil {

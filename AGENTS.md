@@ -23,11 +23,11 @@ cmd/aurora-k8s-agent/   entry point, config, health server
 internal/assembly/      brain embed, dispatcher provider, Secret guard
 internal/bot/           Telegram service split across:
   service.go              core loop, subscribe, recover
-  commands.go             /help, /new, /status, /history, /privileges, /cancel, /retry
-  callbacks.go            inline keyboard callbacks, privilege flow, task approval
+  commands.go             /help, /new, /status, /history, /cancel, /retry
+  callbacks.go            inline keyboard callbacks, task approval
   events.go               runtime event handling (run updates, task cards)
   render.go               formatting, chunking, redaction helpers
-internal/policy/        per-user manifest, elevation profiles, authorization
+internal/policy/        per-user manifest and chat authorization
 internal/state/         encrypted SQLite bridge state
 internal/telegram/      raw Telegram Bot API client
 brain/                  TinyGo Wasm agent source
@@ -39,4 +39,4 @@ charts/                 Helm chart
 - Write simple Go. No frameworks.
 - Secrets never appear in Aurora manifests — use `api_key_env` references.
 - The guarded dispatcher blocks Secret operations at the dispatch level.
-- Elevation profiles are one-session, time-bounded, and audit-logged.
+- Mutating capabilities should require explicit per-operation approval.

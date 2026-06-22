@@ -1,5 +1,3 @@
-replicaCount: 1
-
 image:
   repository: ghcr.io/aurora-capcompute/aurora-k8s-agent
   tag: ""
@@ -54,24 +52,6 @@ policy:
             settings: {namespaces: [default]}
           - name: helm.get_values
             settings: {namespaces: [default]}
-      elevation_profiles:
-        default-write:
-          label: Default namespace write
-          description: Apply/delete Kubernetes resources and mutate Helm releases in default.
-          ttl: 10m
-          overrides:
-            - name: k8s.apply
-              settings: {namespaces: [default], require_approval: true}
-            - name: k8s.delete
-              settings: {namespaces: [default], require_approval: true}
-            - name: helm.install
-              settings: {namespaces: [default], charts: [], require_approval: true}
-            - name: helm.upgrade
-              settings: {namespaces: [default], charts: [], require_approval: true}
-            - name: helm.rollback
-              settings: {namespaces: [default], require_approval: true}
-            - name: helm.uninstall
-              settings: {namespaces: [default], require_approval: true}
 
 # Secret must contain: telegram-bot-token, task-secret, state-key,
 # and the LLM API key under the key named by llmSecretKey.

@@ -8,7 +8,7 @@ The agent combines:
 - native Kubernetes and Helm dispatchers;
 - an OpenAI-compatible cognition dispatcher;
 - a TinyGo/Wasm Kubernetes-agent brain;
-- per-Telegram-user manifests and named elevation profiles;
+- per-Telegram-user manifests and chat authorization;
 - SQLite persistence on a Kubernetes PVC;
 - inline Telegram approval and denial controls.
 
@@ -21,13 +21,14 @@ Three independent boundaries apply:
 1. Kubernetes RBAC is the hard ceiling. The default chart creates namespace
    Roles only in `rbac.targetNamespaces`.
 2. The ConfigMap maps Telegram user IDs to allowed chat IDs, baseline Aurora
-   manifests, and administrator-defined elevation profiles.
-3. Mutating Kubernetes and Helm capability calls yield durable approval tasks.
-   Only the Telegram user who started the session can resolve those tasks.
+   manifests, and their configured capabilities.
+3. Capabilities configured with `require_approval: true` yield durable approval
+   tasks. Only the Telegram user who started the session can resolve those
+   tasks.
 
-An elevation profile is armed through `/privileges`, consumed by the next run,
-and bound to that run's capcompute session. It is revoked when the run reaches a
-terminal state. Users cannot submit arbitrary capability overrides.
+There is no session-scoped privilege escalation layer. Administrators grant
+capabilities directly in each user's manifest; Kubernetes RBAC still limits
+what those capabilities can do.
 
 Policy changes trigger a pod rollout through a ConfigMap checksum. The bridge
 also stores each user's policy digest and rotates the conversation before the
@@ -41,7 +42,6 @@ The PVC contains:
 - Aurora threads, runs, history, replay journals, tasks, and leases;
 - Telegram update inbox and polling offset;
 - `(user, chat) → thread` mappings;
-- armed and consumed elevation profiles;
 - run/status and approval message IDs;
 - encrypted task tokens and processed callback IDs.
 
@@ -64,8 +64,7 @@ Commands:
 
 - `/status` — active session state;
 - `/history` — recent conversation;
-- `/privileges` — select and confirm a one-session elevation profile;
-- `/cancel` — stop the active session and revoke elevation;
+- `/cancel` — stop the active session;
 - `/retry` — reconstruct and resume the latest interrupted session;
 - `/new` — rotate to a fresh conversation;
 - `/help` — command and safety summary.
@@ -140,21 +139,15 @@ policy:
             settings: {namespaces: [default, observability]}
           - name: helm.list
             settings: {namespaces: [default, observability]}
-      elevation_profiles:
-        observability-write:
-          label: Observability write access
-          description: Modify resources and Helm releases in observability.
-          ttl: 10m
-          overrides:
-            - name: k8s.apply
-              settings: {namespaces: [observability], require_approval: true}
-            - name: k8s.delete
-              settings: {namespaces: [observability], require_approval: true}
-            - name: helm.upgrade
-              settings:
-                namespaces: [observability]
-                charts: ["prometheus-community/*"]
-                require_approval: true
+          - name: k8s.apply
+            settings: {namespaces: [observability], require_approval: true}
+          - name: k8s.delete
+            settings: {namespaces: [observability], require_approval: true}
+          - name: helm.upgrade
+            settings:
+              namespaces: [observability]
+              charts: ["prometheus-community/*"]
+              require_approval: true
 ```
 
 Install:
@@ -166,7 +159,8 @@ helm upgrade --install aurora ./charts/aurora-k8s-agent \
 ```
 
 An empty Helm chart allowlist permits all chart references in the allowed
-namespaces. Use an explicit list in production.
+namespaces. Use an explicit list in production. The default values remain
+read-only; add mutating capabilities explicitly where needed.
 
 ## OpenAI-compatible providers
 

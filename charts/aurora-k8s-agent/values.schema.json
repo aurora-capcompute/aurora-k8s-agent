@@ -3,7 +3,6 @@
   "type": "object",
   "required": ["image", "policy", "rbac", "secretName"],
   "properties": {
-    "replicaCount": {"type": "integer", "const": 1},
     "image": {
       "type": "object",
       "required": ["repository"],
@@ -36,6 +35,7 @@
           "minProperties": 1,
           "additionalProperties": {
             "type": "object",
+            "additionalProperties": false,
             "required": ["allowed_chats", "manifest"],
             "properties": {
               "allowed_chats": {
@@ -43,8 +43,7 @@
                 "minItems": 1,
                 "items": {"type": "integer"}
               },
-              "manifest": {"type": "object"},
-              "elevation_profiles": {"type": "object"}
+              "manifest": {"type": "object"}
             }
           }
         }

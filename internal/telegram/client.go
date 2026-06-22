@@ -20,6 +20,16 @@ type Client struct {
 	http    *http.Client
 }
 
+type sanitizedError struct {
+	message string
+	cause   error
+}
+
+func (e *sanitizedError) Error() string { return e.message }
+func (e *sanitizedError) Is(target error) bool {
+	return errors.Is(e.cause, target)
+}
+
 func NewClient(token string) *Client {
 	return &Client{
 		baseURL: "https://api.telegram.org",
@@ -101,7 +111,11 @@ func (c *Client) AnswerCallback(ctx context.Context, id, text string, alert bool
 	}, nil)
 }
 
-func (c *Client) call(ctx context.Context, method string, payload any, target any) error {
+func (c *Client) call(ctx context.Context, method string, payload any, target any) (resultErr error) {
+	defer func() {
+		resultErr = c.sanitizeError(resultErr)
+	}()
+
 	var body io.Reader
 	if payload != nil {
 		raw, err := json.Marshal(payload)
@@ -149,4 +163,15 @@ func (c *Client) call(ctx context.Context, method string, payload any, target an
 		return nil
 	}
 	return json.Unmarshal(envelope.Result, target)
+}
+
+func (c *Client) sanitizeError(err error) error {
+	if err == nil || c.token == "" {
+		return err
+	}
+	message := strings.ReplaceAll(err.Error(), c.token, "[REDACTED]")
+	if message == err.Error() {
+		return err
+	}
+	return &sanitizedError{message: message, cause: err}
 }
