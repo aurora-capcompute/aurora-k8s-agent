@@ -33,6 +33,7 @@ policy:
           Delegate read-only reconnaissance to your child brains when useful.
         capabilities:
           - name: openai.chat
+            hidden: true
             settings:
               base_url: https://api.openai.com/v1
               api_key_env: OPENAI_API_KEY
@@ -70,6 +71,7 @@ policy:
               Do not attempt mutations.
             capabilities:
               - name: openai.chat
+            hidden: true
                 settings:
                   base_url: https://api.openai.com/v1
                   api_key_env: OPENAI_API_KEY
@@ -91,6 +93,7 @@ policy:
               upgrade, or uninstall releases.
             capabilities:
               - name: openai.chat
+            hidden: true
                 settings:
                   base_url: https://api.openai.com/v1
                   api_key_env: OPENAI_API_KEY

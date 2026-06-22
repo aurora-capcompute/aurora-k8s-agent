@@ -50,21 +50,10 @@ func (p *Provider) NewDispatcher(
 	if err != nil {
 		return nil, err
 	}
-	config.Capabilities = visibleCapabilities(config.Capabilities)
 	base := builtin.New[aurora.RunContext](config)
 	return &guardedDispatcher{
 		next: base, capabilities: append([]dispatcher.Capability(nil), config.Capabilities...),
 	}, nil
-}
-
-func visibleCapabilities(all []dispatcher.Capability) []dispatcher.Capability {
-	result := make([]dispatcher.Capability, 0, len(all))
-	for _, capability := range all {
-		if capability.Name != "openai.chat" {
-			result = append(result, capability)
-		}
-	}
-	return result
 }
 
 type guardedDispatcher struct {
