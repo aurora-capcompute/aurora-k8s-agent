@@ -38,6 +38,11 @@ func renderTask(task aurora.TaskSnapshot) string {
 		escape(task.Summary) + "\n\nTask expires " + formatExpiry(task.ExpiresAt) + "."
 }
 
+func renderTimerWaiting(fireAt time.Time) string {
+	return "⏲ <b>Timer set</b>\nI'll continue at <code>" +
+		escape(fireAt.Local().Format(time.RFC822)) + "</code>."
+}
+
 func stopKeyboard(runID string) *telegram.InlineKeyboardMarkup {
 	return &telegram.InlineKeyboardMarkup{InlineKeyboard: [][]telegram.InlineKeyboardButton{{
 		{Text: "🛑 Cancel session", CallbackData: "stop:" + runID},

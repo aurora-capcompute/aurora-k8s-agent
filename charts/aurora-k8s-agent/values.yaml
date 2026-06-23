@@ -62,6 +62,9 @@ policy:
             settings: {namespaces: [default], require_approval: true}
           - name: helm.uninstall
             settings: {namespaces: [default], require_approval: true}
+          - name: timer.set
+            # Pause the run for a relative duration and resume when it fires.
+            settings: {max_duration_ms: 86400000}
         children:
           - name: k8s-scout
             brain: kubernetes-agent

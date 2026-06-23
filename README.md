@@ -162,6 +162,26 @@ An empty Helm chart allowlist permits all chart references in the allowed
 namespaces. Use an explicit list in production. The default values remain
 read-only; add mutating capabilities explicitly where needed.
 
+## Timers
+
+The `timer.set` capability lets the agent pause a run for a relative duration and
+be replayed when it fires. The agent calls it with `duration_seconds` (and an
+optional `label`); the run yields a durable timer task and its status message shows
+when it will continue. A scheduler resolves the task once the duration elapses,
+which resumes the run from exactly where it paused, so the agent can follow up
+(for example, send a reminder). Timers are persisted with the run and re-armed on
+restart; any whose fire time already passed fire immediately on recovery.
+
+Grant it per user with an optional `max_duration_ms` bound (default 24h):
+
+```yaml
+- name: timer.set
+  settings: {max_duration_ms: 86400000}
+```
+
+Timers rely on durable tasks not having a shorter expiry than the timer; the agent
+does not configure a task TTL, so timers up to `max_duration_ms` are safe.
+
 ## OpenAI-compatible providers
 
 `openai.chat` supports OpenAI and compatible gateways. Configure `base_url`,

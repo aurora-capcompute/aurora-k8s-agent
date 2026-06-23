@@ -21,6 +21,7 @@ type Service struct {
 	policies *policy.Set
 	identity telegram.BotIdentity
 	logger   *slog.Logger
+	timers   *timerScheduler
 
 	mu            sync.Mutex
 	subscriptions map[string]func()
@@ -36,12 +37,15 @@ func New(
 ) *Service {
 	return &Service{
 		runtime: runtime, client: client, store: store, policies: policies,
-		identity: identity, logger: logger, subscriptions: make(map[string]func()),
+		identity: identity, logger: logger,
+		timers:        newTimerScheduler(runtime, logger),
+		subscriptions: make(map[string]func()),
 	}
 }
 
 func (s *Service) Run(ctx context.Context) error {
 	defer s.unsubscribeAll()
+	defer s.timers.stopAll()
 
 	backoff := time.Second
 	for {
@@ -256,15 +260,20 @@ func (s *Service) Recover(ctx context.Context) error {
 				run = current
 			}
 		}
-		s.updateRunMessage(ctx, run)
 		runtimeTasks, taskErr := s.runtime.Tasks(run.ID)
 		if taskErr == nil {
 			for _, task := range runtimeTasks {
-				if task.State == aurora.TaskStatePending {
-					s.createTaskMessage(ctx, conversation, task)
+				if task.State != aurora.TaskStatePending {
+					continue
 				}
+				if isTimerTask(task) {
+					s.scheduleTimer(ctx, conversation, task)
+					continue
+				}
+				s.createTaskMessage(ctx, conversation, task)
 			}
 		}
+		s.updateRunMessage(ctx, run)
 	}
 	tasks, err := s.store.PendingTaskMessages(ctx)
 	if err != nil {

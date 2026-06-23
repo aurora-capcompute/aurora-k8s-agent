@@ -14,12 +14,19 @@ func (s *Service) handleEvent(ctx context.Context, conversation state.Conversati
 	case "run.updated":
 		var run aurora.RunSnapshot
 		if decodeEvent(event.Data, &run) == nil {
+			if terminal(run.Status) {
+				s.timers.cancelRun(run.ID)
+			}
 			s.updateRunMessage(ctx, run)
 		}
 	case "task.created":
 		var task aurora.TaskSnapshot
 		if decodeEvent(event.Data, &task) == nil {
-			s.createTaskMessage(ctx, conversation, task)
+			if isTimerTask(task) {
+				s.scheduleTimer(ctx, conversation, task)
+			} else {
+				s.createTaskMessage(ctx, conversation, task)
+			}
 		}
 	case "task.updated":
 		var task aurora.TaskSnapshot
@@ -52,6 +59,11 @@ func (s *Service) updateRunMessage(ctx context.Context, run aurora.RunSnapshot) 
 	}
 	previousState := message.State
 	text, keyboard := renderRun(run)
+	if run.Status == aurora.RunWaitingTask {
+		if fireAt, ok := s.timers.fireAtFor(run.ID); ok {
+			text = renderTimerWaiting(fireAt)
+		}
+	}
 	longAnswer := run.Status == aurora.RunCompleted && len(run.Answer) > 3000
 	if longAnswer {
 		text = "✅ <b>Completed</b>\nThe full answer follows in separate messages."
@@ -96,6 +108,14 @@ func (s *Service) createTaskMessage(
 		ChatID: conversation.ChatID, MessageID: sent.MessageID,
 		Token: task.WebhookToken, State: string(task.State),
 	})
+}
+
+// scheduleTimer arms a timer task. Unlike approval tasks there is no card to
+// approve; the run's own status message reflects the waiting-for-timer state and
+// the scheduler resolves the task when it fires. Arming is idempotent, so this is
+// safe to call from both the live event and restart recovery.
+func (s *Service) scheduleTimer(_ context.Context, _ state.Conversation, task aurora.TaskSnapshot) {
+	s.timers.schedule(task)
 }
 
 func (s *Service) updateTaskMessage(ctx context.Context, task aurora.TaskSnapshot) {

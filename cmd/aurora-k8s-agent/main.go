@@ -74,6 +74,7 @@ func run() error {
 		registry.InternetRegistration{},
 		registry.MCPRegistration{},
 		registry.AuroraLogRegistration{},
+		registry.TimerRegistration{},
 	)
 	mcpServers, err := mcpServersFromEnv()
 	if err != nil {
