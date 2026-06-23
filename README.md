@@ -162,6 +162,72 @@ An empty Helm chart allowlist permits all chart references in the allowed
 namespaces. Use an explicit list in production. The default values remain
 read-only; add mutating capabilities explicitly where needed.
 
+## Images and deployment
+
+CI publishes container images to the GitHub Container Registry under
+`ghcr.io/aurora-capcompute/aurora-k8s-agent`:
+
+| Trigger | Tags | Use |
+|---------|------|-----|
+| push to `main` (`ci.yml`) | `main`, `latest`, `sha-<shortsha>` | track main / pin an exact commit |
+| `vX.Y.Z` git tag (`release.yml`) | `X.Y.Z`, `X.Y` (multi-arch, signed, SBOM) | versioned releases |
+
+The `sha-<shortsha>` tags are immutable — pin to one for reproducible deploys and
+roll back by changing a single value. `main`/`latest` move with the branch.
+
+The chart already defaults `image.repository` to that path, so a deploy only needs
+a tag:
+
+```sh
+helm upgrade --install aurora oci://ghcr.io/aurora-capcompute/charts/aurora-k8s-agent \
+  --namespace aurora --create-namespace \
+  -f values.production.yaml \
+  --set image.tag=sha-1a2b3c4
+```
+
+(The chart is also published to GHCR on release; or use a local
+`./charts/aurora-k8s-agent` checkout.)
+
+### Pulling a private image
+
+GHCR packages are private by default, so the cluster needs an image pull secret.
+Create one from a token with `read:packages`, then reference it in values:
+
+```sh
+kubectl -n aurora create secret docker-registry ghcr-pull \
+  --docker-server=ghcr.io \
+  --docker-username='<github-username>' \
+  --docker-password='<PAT or GITHUB_TOKEN with read:packages>'
+```
+
+```yaml
+# values.production.yaml
+image:
+  tag: sha-1a2b3c4
+imagePullSecrets:
+  - name: ghcr-pull
+```
+
+### Self-upgrade via the agent
+
+Because the agent operates Helm, it can roll itself to a newly published image —
+just tell it (over Telegram) to upgrade its own release to the desired tag. This
+requires, in that user's manifest, a `helm.upgrade` capability scoped to the
+agent's own namespace and chart (keep `require_approval: true`), and the
+`ghcr-pull` secret already present in the cluster:
+
+```yaml
+- name: helm.upgrade
+  settings:
+    namespaces: [aurora]
+    charts: ["oci://ghcr.io/aurora-capcompute/charts/aurora-k8s-agent"]
+    require_approval: true
+```
+
+The agent then runs the same `helm upgrade … --set image.tag=<new-tag>` shown
+above. Granting an agent the ability to replace its own image is powerful; scope
+the capability tightly and leave approval on.
+
 ## Timers
 
 The `timer.set` capability lets the agent pause a run for a relative duration and
