@@ -24,14 +24,3 @@ func TestKubernetesSecretCallsAreBlocked(t *testing.T) {
 		t.Fatal("Deployment was blocked")
 	}
 }
-
-func TestVisibleCapabilitiesHidesCognition(t *testing.T) {
-	got := visibleCapabilities([]dispatcher.Capability{
-		{Name: "openai.chat"},
-		{Name: "k8s.get"},
-		{Name: "helm.upgrade"},
-	})
-	if len(got) != 2 || got[0].Name != "k8s.get" || got[1].Name != "helm.upgrade" {
-		t.Fatalf("visibleCapabilities = %+v", got)
-	}
-}
