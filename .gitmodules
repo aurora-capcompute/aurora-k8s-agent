@@ -6,7 +6,7 @@
 	url = https://github.com/Gr0Bert/aurora.git
 [submodule "third_party/aurora-dispatchers"]
 	path = third_party/aurora-dispatchers
-	url = https://github.com/Gr0Bert/aurora-dispatchers.git
+	url = https://github.com/aurora-capcompute/aurora-dispatchers.git
 [submodule "third_party/aurora-dispatchers-k8s"]
 	path = third_party/aurora-dispatchers-k8s
 	url = https://github.com/aurora-capcompute/aurora-dispatchers-k8s.git

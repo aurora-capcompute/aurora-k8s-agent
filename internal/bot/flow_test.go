@@ -35,6 +35,8 @@ func (flowProvider) NewDispatcher(
 	return nil, nil
 }
 
+func (flowProvider) IsSubset(string, json.RawMessage, json.RawMessage) error { return nil }
+
 type flowRuntime struct {
 	mu      sync.Mutex
 	thread  aurora.ThreadSnapshot

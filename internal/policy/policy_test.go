@@ -26,6 +26,8 @@ func (testProvider) NewDispatcher(
 	return nil, nil
 }
 
+func (testProvider) IsSubset(string, json.RawMessage, json.RawMessage) error { return nil }
+
 func TestParseAuthorizesUser(t *testing.T) {
 	raw := []byte(`{
 	  "version": 1,
