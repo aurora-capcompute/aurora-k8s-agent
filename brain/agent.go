@@ -103,8 +103,8 @@ func run() int32 {
 }
 
 func runAgent() error {
-	var in input
-	if err := pdk.InputJSON(&in); err != nil {
+	in, err := fetchInput()
+	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(in.Message) == "" {
@@ -128,7 +128,7 @@ func runAgent() error {
 		if err != nil {
 			parseErrors++
 			if parseErrors >= 3 {
-				return pdk.OutputJSON(output{Status: "completed", Answer: content})
+				return finish(content)
 			}
 			messages = append(messages,
 				message{Role: "assistant", Content: content},
@@ -142,7 +142,7 @@ func runAgent() error {
 			if err := json.Unmarshal(batch.Actions[0].Content, &final); err != nil || strings.TrimSpace(final.Answer) == "" {
 				return errors.New("final action is missing an answer")
 			}
-			return pdk.OutputJSON(output{Status: "completed", Answer: final.Answer})
+			return finish(final.Answer)
 		}
 		messages = append(messages, message{Role: "assistant", Content: content})
 		results := make([]observation, 0, len(batch.Actions))
@@ -292,6 +292,40 @@ func progressSummary(action string, content json.RawMessage) string {
 		}
 	}
 	return "⚙ " + action
+}
+
+type finishArgs struct {
+	Answer string `json:"answer"`
+}
+
+// fetchInput retrieves the run input via the agent.input host call so it is
+// recorded on the replay journal (making replay deterministic).
+func fetchInput() (input, error) {
+	response, err := dispatch(call{Name: "agent.input"})
+	if err != nil {
+		return input{}, err
+	}
+	if response.Status != "result" {
+		return input{}, errors.New(response.Message)
+	}
+	var in input
+	if err := json.Unmarshal(response.Result, &in); err != nil {
+		return input{}, err
+	}
+	return in, nil
+}
+
+// finish reports the answer via the agent.finish host call (recorded on the
+// journal, where the host reads it from) and signals completion to the host.
+func finish(answer string) error {
+	args, err := json.Marshal(finishArgs{Answer: answer})
+	if err != nil {
+		return err
+	}
+	if _, err := dispatch(call{Name: "agent.finish", Args: args}); err != nil {
+		return err
+	}
+	return pdk.OutputJSON(output{Status: "completed"})
 }
 
 func dispatch(request call) (hostResponse, error) {
