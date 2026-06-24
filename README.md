@@ -72,6 +72,24 @@ Commands:
 The bot edits one run status message as execution progresses and sends separate
 approval cards containing the operation, arguments, summary, and expiry.
 
+## Slack channel
+
+The same agent can run on Slack instead of Telegram — set `AURORA_CHANNEL=slack`
+(chart: `channel: slack`). It uses Slack **Socket Mode**, so it still needs no
+public ingress. DM the bot or @mention it; mutating capabilities surface
+**Approve / Deny** buttons resolvable only by the user who started the run; the
+slash command is `/aurora help|new|status|cancel`.
+
+Slack app setup: enable Socket Mode and generate an app-level token
+(`connections:write`); bot scopes `app_mentions:read`, `chat:write`, `commands`,
+`im:history`, `im:read`, `im:write`; subscribe to `app_mention` and `message.im`;
+add a `/aurora` slash command. The Secret then needs `slack-app-token` (`xapp-…`)
+and `slack-bot-token` (`xoxb-…`) instead of `telegram-bot-token`.
+
+Policy for Slack is keyed by Slack user IDs (`U…`) with `allowed_channels`
+(channel/DM IDs `C…`/`G…`/`D…`) rather than numeric IDs and `allowed_chats`.
+Conversations are isolated by Slack user ID and channel.
+
 ## Install
 
 Create a Kubernetes Secret with the four required keys:

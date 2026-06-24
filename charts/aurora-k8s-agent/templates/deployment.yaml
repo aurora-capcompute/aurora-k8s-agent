@@ -46,8 +46,17 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
+            - name: AURORA_CHANNEL
+              value: {{ .Values.channel | quote }}
+            {{- if eq .Values.channel "slack" }}
+            - name: SLACK_APP_TOKEN_FILE
+              value: /var/run/aurora-secrets/slack-app-token
+            - name: SLACK_BOT_TOKEN_FILE
+              value: /var/run/aurora-secrets/slack-bot-token
+            {{- else }}
             - name: TELEGRAM_BOT_TOKEN_FILE
               value: /var/run/aurora-secrets/telegram-bot-token
+            {{- end }}
             - name: AURORA_TASK_SECRET_FILE
               value: /var/run/aurora-secrets/task-secret
             - name: AURORA_STATE_KEY_FILE

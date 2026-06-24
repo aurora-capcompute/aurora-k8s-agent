@@ -12,6 +12,7 @@ require (
 	capcompute v0.0.0
 	github.com/extism/go-pdk v1.1.3
 	github.com/mattn/go-sqlite3 v1.14.46
+	github.com/slack-go/slack v0.26.0
 )
 
 require (
@@ -25,6 +26,7 @@ require (
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect

@@ -5,6 +5,14 @@ image:
 
 imagePullSecrets: []
 
+# Communication channel: "telegram" (default) or "slack".
+# - telegram: secret must contain `telegram-bot-token`. Policy users are keyed by
+#   numeric Telegram user IDs with `allowed_chats`.
+# - slack: secret must contain `slack-app-token` (xapp-…, connections:write) and
+#   `slack-bot-token` (xoxb-…). Policy users are keyed by Slack user IDs (U…) with
+#   `allowed_channels`. Uses Slack Socket Mode (no public ingress).
+channel: telegram
+
 serviceAccount:
   create: true
   name: ""
