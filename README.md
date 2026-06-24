@@ -72,13 +72,23 @@ Commands:
 The bot edits one run status message as execution progresses and sends separate
 approval cards containing the operation, arguments, summary, and expiry.
 
-## Slack channel
+## Sources (channels)
 
-The same agent can run on Slack instead of Telegram — set `AURORA_CHANNEL=slack`
-(chart: `channel: slack`). It uses Slack **Socket Mode**, so it still needs no
-public ingress. DM the bot or @mention it; mutating capabilities surface
-**Approve / Deny** buttons resolvable only by the user who started the run; the
-slash command is `/aurora help|new|status|cancel`.
+A **source** is a first-class caller of the agent: it owns a transport,
+identifies a subject, and drives runs against the shared runtime. Telegram and
+Slack are the interactive sources today, and they can run **at the same time**
+against one runtime — set `AURORA_SOURCES` to a comma-separated list (chart:
+`channels: [telegram, slack]`). The legacy single-channel `AURORA_CHANNEL` /
+`channel:` still works as a fallback. Each source keeps its own bridge state
+(`telegram.db`, `slack.db`) and reads its users from the same policy file.
+
+## Slack source
+
+The agent can run on Slack alongside or instead of Telegram — add `slack` to
+`AURORA_SOURCES` (chart: `channels: [slack]`). It uses Slack **Socket Mode**, so
+it still needs no public ingress. DM the bot or @mention it; mutating
+capabilities surface **Approve / Deny** buttons resolvable only by the user who
+started the run; the slash command is `/aurora help|new|status|cancel`.
 
 Slack app setup: enable Socket Mode and generate an app-level token
 (`connections:write`); bot scopes `app_mentions:read`, `chat:write`, `commands`,

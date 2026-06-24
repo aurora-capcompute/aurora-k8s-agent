@@ -19,8 +19,9 @@ make docker       # docker build
 Dependencies are pinned as git submodules under `third_party/`.
 
 ```
-cmd/aurora-k8s-agent/   entry point; AURORA_CHANNEL selects telegram|slack
+cmd/aurora-k8s-agent/   entry point; AURORA_SOURCES runs telegram and/or slack
 internal/assembly/      brain embed, dispatcher provider, Secret guard
+internal/source/        Source interface + concurrent multi-source runner
 internal/bot/           Telegram service (service/commands/callbacks/events/render)
 internal/policy/        per-user manifest and chat authorization (Telegram, int64 IDs)
 internal/state/         encrypted SQLite bridge state (Telegram)
@@ -33,10 +34,14 @@ brain/                  TinyGo Wasm agent source
 charts/                 Helm chart
 ```
 
-Both channels share the same runtime, `internal/assembly`, brain, and dispatchers;
-they differ only in transport, user/channel identifiers, and state. Adding a
-channel means a transport client + a service mirroring `internal/bot`, plus a
-branch in `cmd`.
+Each channel is a `source.Source` (`Kind()` + `Start(ctx)`); `cmd` builds the set
+named by `AURORA_SOURCES` and runs them concurrently against one runtime via
+`source.Run` (first failure cancels the rest). All sources share the runtime,
+`internal/assembly`, brain, and dispatchers; they differ only in transport,
+user/channel identifiers, and state. Adding a source means a transport client + a
+service mirroring `internal/bot` that implements `source.Source`, plus a branch in
+`cmd`. See `docs/rfc-sources-and-bindings.md` for the staged plan (named-manifest
+bindings, a Kubernetes-informer source, CRDs).
 
 ## Conventions
 

@@ -30,6 +30,7 @@ import (
 	"aurora-k8s-agent/internal/slackbot"
 	"aurora-k8s-agent/internal/slackpolicy"
 	"aurora-k8s-agent/internal/slackstate"
+	"aurora-k8s-agent/internal/source"
 	"aurora-k8s-agent/internal/state"
 	"aurora-k8s-agent/internal/telegram"
 	"aurora-stores/memory"
@@ -121,94 +122,134 @@ func run() error {
 	health := startHealthServer(ctx, env("AURORA_HEALTH_ADDR", ":8080"), &ready, logger)
 	defer health.Shutdown(context.Background())
 
-	channel := strings.ToLower(env("AURORA_CHANNEL", "telegram"))
-	switch channel {
-	case "telegram":
-		return runTelegram(ctx, runtime, provider, policyPath, dataDir, stateKey, &ready, logger)
-	case "slack":
-		return runSlack(ctx, runtime, provider, policyPath, dataDir, stateKey, &ready, logger)
-	default:
-		return fmt.Errorf("unknown AURORA_CHANNEL %q (want telegram or slack)", channel)
+	kinds, err := sourceKinds()
+	if err != nil {
+		return err
 	}
+	var (
+		sources []source.Source
+		closers []func()
+	)
+	defer func() {
+		for i := len(closers) - 1; i >= 0; i-- {
+			closers[i]()
+		}
+	}()
+	for _, kind := range kinds {
+		var (
+			src    source.Source
+			closer func()
+		)
+		switch kind {
+		case "telegram":
+			src, closer, err = buildTelegram(ctx, runtime, provider, policyPath, dataDir, stateKey, logger)
+		case "slack":
+			src, closer, err = buildSlack(ctx, runtime, provider, policyPath, dataDir, stateKey, logger)
+		default:
+			return fmt.Errorf("unknown source %q (want telegram or slack)", kind)
+		}
+		if err != nil {
+			return err
+		}
+		sources = append(sources, src)
+		if closer != nil {
+			closers = append(closers, closer)
+		}
+	}
+
+	ready.Store(true)
+	logger.Info("Aurora agent started", "version", version, "sources", kinds)
+	return source.Run(ctx, logger, sources...)
 }
 
-func runTelegram(
+// sourceKinds resolves the enabled sources from AURORA_SOURCES (a comma-separated
+// list, e.g. "telegram,slack"), falling back to the single-channel AURORA_CHANNEL
+// and then "telegram". Order is preserved; duplicates are dropped.
+func sourceKinds() ([]string, error) {
+	raw := env("AURORA_SOURCES", env("AURORA_CHANNEL", "telegram"))
+	seen := make(map[string]struct{})
+	var kinds []string
+	for _, part := range strings.Split(raw, ",") {
+		kind := strings.ToLower(strings.TrimSpace(part))
+		if kind == "" {
+			continue
+		}
+		if _, dup := seen[kind]; dup {
+			continue
+		}
+		seen[kind] = struct{}{}
+		kinds = append(kinds, kind)
+	}
+	if len(kinds) == 0 {
+		return nil, errors.New("no sources configured (set AURORA_SOURCES or AURORA_CHANNEL)")
+	}
+	return kinds, nil
+}
+
+func buildTelegram(
 	ctx context.Context,
 	runtime aurora.Runtime,
 	provider aurora.DispatcherProvider,
 	policyPath, dataDir string,
 	stateKey []byte,
-	ready *atomic.Bool,
 	logger *slog.Logger,
-) error {
+) (source.Source, func(), error) {
 	token, err := requiredSecret("TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN_FILE")
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	policies, err := policy.Load(policyPath, provider)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	bridgeStore, err := state.Open(filepath.Join(dataDir, "telegram.db"), stateKey)
 	if err != nil {
-		return fmt.Errorf("open Telegram state: %w", err)
+		return nil, nil, fmt.Errorf("open Telegram state: %w", err)
 	}
-	defer bridgeStore.Close()
-
 	client := telegram.NewClient(token)
 	if baseURL := os.Getenv("TELEGRAM_API_BASE_URL"); baseURL != "" {
 		client.SetBaseURL(baseURL)
 	}
 	identity, err := client.GetMe(ctx)
 	if err != nil {
-		return fmt.Errorf("validate Telegram bot token: %w", err)
+		bridgeStore.Close()
+		return nil, nil, fmt.Errorf("validate Telegram bot token: %w", err)
 	}
-
 	service := bot.New(runtime, client, bridgeStore, policies, identity, logger)
-	if err := service.Recover(ctx); err != nil {
-		return fmt.Errorf("recover Telegram sessions: %w", err)
-	}
-	ready.Store(true)
-	logger.Info("Aurora agent started", "version", version,
-		"channel", "telegram", "telegram_bot", identity.Username, "telegram_bot_id", identity.ID)
-	return service.Run(ctx)
+	return service, func() { bridgeStore.Close() }, nil
 }
 
-func runSlack(
-	ctx context.Context,
+func buildSlack(
+	_ context.Context,
 	runtime aurora.Runtime,
 	provider aurora.DispatcherProvider,
 	policyPath, dataDir string,
 	stateKey []byte,
-	ready *atomic.Bool,
 	logger *slog.Logger,
-) error {
+) (source.Source, func(), error) {
 	appToken, err := requiredSecret("SLACK_APP_TOKEN", "SLACK_APP_TOKEN_FILE")
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	botToken, err := requiredSecret("SLACK_BOT_TOKEN", "SLACK_BOT_TOKEN_FILE")
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	policies, err := slackpolicy.Load(policyPath, provider)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	bridgeStore, err := slackstate.Open(filepath.Join(dataDir, "slack.db"), stateKey)
 	if err != nil {
-		return fmt.Errorf("open Slack state: %w", err)
+		return nil, nil, fmt.Errorf("open Slack state: %w", err)
 	}
-	defer bridgeStore.Close()
-
 	client, err := slackclient.NewClient(appToken, botToken)
 	if err != nil {
-		return err
+		bridgeStore.Close()
+		return nil, nil, err
 	}
 	service := slackbot.New(runtime, client, bridgeStore, policies, logger)
-	ready.Store(true)
-	logger.Info("Aurora agent started", "version", version, "channel", "slack")
-	return service.Run(ctx)
+	return service, func() { bridgeStore.Close() }, nil
 }
 
 func startHealthServer(

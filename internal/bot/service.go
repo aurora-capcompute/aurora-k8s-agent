@@ -43,6 +43,18 @@ func New(
 	}
 }
 
+// Kind identifies this source. Implements source.Source.
+func (s *Service) Kind() string { return "telegram" }
+
+// Start reconciles persisted sessions and then serves Telegram updates until
+// ctx is cancelled. Implements source.Source.
+func (s *Service) Start(ctx context.Context) error {
+	if err := s.Recover(ctx); err != nil {
+		return err
+	}
+	return s.Run(ctx)
+}
+
 func (s *Service) Run(ctx context.Context) error {
 	defer s.unsubscribeAll()
 	defer s.timers.stopAll()

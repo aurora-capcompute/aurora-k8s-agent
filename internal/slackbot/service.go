@@ -42,6 +42,13 @@ func New(
 	}
 }
 
+// Kind identifies this source. Implements source.Source.
+func (s *Service) Kind() string { return "slack" }
+
+// Start serves the Slack source until ctx is cancelled. Run already identifies
+// the bot and recovers persisted state. Implements source.Source.
+func (s *Service) Start(ctx context.Context) error { return s.Run(ctx) }
+
 // Run identifies the bot, reconciles persisted state, then serves Socket Mode
 // events until ctx is cancelled.
 func (s *Service) Run(ctx context.Context) error {
