@@ -58,6 +58,34 @@ func TestParseAuthorizesUser(t *testing.T) {
 	}
 }
 
+func TestParseBindingsFormat(t *testing.T) {
+	manifest := `{"version": 2, "brain": "kubernetes-agent", "capabilities": [{"name": "k8s.get", "settings": {"namespaces": ["default"]}}]}`
+	legacy := []byte(`{"version":1,"users":{"42":{"allowed_chats":[-1001],"manifest":` + manifest + `}}}`)
+	bindings := []byte(`{"version":2,"manifests":{"ops":` + manifest + `},"bindings":[{"source":"telegram","manifest":"ops","users":["42"],"scopes":["-1001"]},{"source":"slack","manifest":"ops","users":["U9"],"scopes":["C9"]}]}`)
+
+	legacySet, err := Parse(legacy, testProvider{})
+	if err != nil {
+		t.Fatalf("legacy parse: %v", err)
+	}
+	bindingSet, err := Parse(bindings, testProvider{})
+	if err != nil {
+		t.Fatalf("binding parse: %v", err)
+	}
+
+	user, ok := bindingSet.Authorize(42, -1001)
+	if !ok {
+		t.Fatal("bound telegram user was rejected")
+	}
+	legacyUser, _ := legacySet.Authorize(42, -1001)
+	if user.Digest != legacyUser.Digest {
+		t.Fatalf("digest mismatch: binding %s != legacy %s", user.Digest, legacyUser.Digest)
+	}
+	// The slack binding must not leak into the telegram set.
+	if _, ok := bindingSet.Authorize(42, -1002); ok {
+		t.Fatal("unauthorized chat accepted")
+	}
+}
+
 func TestParseRejectsInvalid(t *testing.T) {
 	cases := []string{
 		`{"version":2,"users":{"42":{"allowed_chats":[42],"manifest":{"version":2}}}}`,

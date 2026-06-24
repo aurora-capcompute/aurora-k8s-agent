@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"aurora-capcompute/aurora"
+
+	"aurora-k8s-agent/internal/binding"
 )
 
 type File struct {
@@ -43,6 +45,9 @@ func Load(path string, provider aurora.DispatcherProvider) (*Set, error) {
 }
 
 func Parse(raw []byte, provider aurora.DispatcherProvider) (*Set, error) {
+	if binding.IsBindingFormat(raw) {
+		return parseBindings(raw, provider)
+	}
 	var file File
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	decoder.DisallowUnknownFields()
@@ -92,4 +97,38 @@ func (s *Set) Authorize(userID, chatID int64) (User, bool) {
 	}
 	_, ok = user.AllowedChats[chatID]
 	return user, ok
+}
+
+// parseBindings builds the Telegram authorization set from the shared
+// named-manifest bindings format. Users and scopes are numeric Telegram IDs.
+func parseBindings(raw []byte, provider aurora.DispatcherProvider) (*Set, error) {
+	resolved, err := binding.ForSource(raw, "telegram", provider)
+	if err != nil {
+		return nil, err
+	}
+	set := &Set{users: make(map[int64]User)}
+	for _, r := range resolved {
+		chats := make(map[int64]struct{}, len(r.Scopes))
+		for _, scope := range r.Scopes {
+			id, err := strconv.ParseInt(strings.TrimSpace(scope), 10, 64)
+			if err != nil || id == 0 {
+				return nil, fmt.Errorf("invalid Telegram chat ID %q", scope)
+			}
+			chats[id] = struct{}{}
+		}
+		for _, subject := range r.Users {
+			id, err := strconv.ParseInt(strings.TrimSpace(subject), 10, 64)
+			if err != nil || id <= 0 {
+				return nil, fmt.Errorf("invalid Telegram user ID %q", subject)
+			}
+			if _, dup := set.users[id]; dup {
+				return nil, fmt.Errorf("Telegram user %d is bound more than once", id)
+			}
+			set.users[id] = User{ID: id, AllowedChats: chats, Manifest: r.Manifest, Digest: r.Digest}
+		}
+	}
+	if len(set.users) == 0 {
+		return nil, errors.New("policy must bind at least one Telegram user")
+	}
+	return set, nil
 }

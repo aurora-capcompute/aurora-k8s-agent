@@ -178,6 +178,41 @@ policy:
               require_approval: true
 ```
 
+### Named manifests and bindings
+
+Instead of copying a manifest into every user, you can define each manifest once
+and **bind** it to a set of `(source, subject, scope)` tuples. The agent
+auto-detects this format (chart: set `policy.manifests` and `policy.bindings`
+instead of `policy.users`):
+
+```yaml
+policy:
+  version: 2
+  manifests:
+    ops:
+      version: 2
+      brain: kubernetes-agent
+      capabilities:
+        - name: openai.chat
+          settings: {api_key_env: OPENAI_API_KEY, default_model: gpt-5.5}
+        - name: k8s.get
+          settings: {namespaces: [default]}
+  bindings:
+    # Same manifest, two sources, different subjects/scopes.
+    - source: telegram
+      manifest: ops
+      users: ["123456789"]      # numeric Telegram user IDs
+      scopes: ["123456789"]     # numeric chat IDs
+    - source: slack
+      manifest: ops
+      users: ["U0123"]          # Slack user IDs
+      scopes: ["C0001", "D0002"]  # Slack channel/DM IDs
+```
+
+The legacy per-channel `policy.users` form still works unchanged. A manifest
+migrated verbatim keeps the same digest, so existing sessions are not forced to
+re-confirm.
+
 Install:
 
 ```sh

@@ -51,17 +51,29 @@ Source  ── identifies ──▶ subject + scope
 
 ## Implemented now
 
-Increments **1 and 2**: the `internal/source` package (interface + concurrent
-runner with first-error cancellation), Telegram and Slack implementing
-`source.Source`, `AURORA_SOURCES` multi-source wiring in `cmd`, and the chart
-`channels` list. The existing channels' internals (services, policy, state,
-render) are unchanged, so behavior per channel is identical to before.
+Increments **1, 2, and 3**:
+
+- `internal/source` (interface + concurrent runner with first-error
+  cancellation); Telegram and Slack implement `source.Source`.
+- `AURORA_SOURCES` multi-source wiring in `cmd`; the chart takes a `channels`
+  list. Sources run concurrently against one runtime.
+- `internal/binding`: the named-manifest `manifests:` + `bindings:` format. A
+  manifest is defined once and bound to `(source, subject, scope)` tuples. The
+  Telegram and Slack policy loaders auto-detect it and project it into their
+  existing authorization sets; the legacy per-channel `users:` files still load.
+  Manifests are digested identically, so migrating a manifest verbatim preserves
+  its digest (no forced re-confirmation).
+
+The existing channels' internals (services, state, render) are unchanged, so
+behavior per channel is identical to before.
 
 ## Deferred
 
-- Increment 3 (named-manifest bindings config) — the policy packages still hold
-  per-channel manifests today.
 - The internal de-duplication of the two services into a shared driver/sink. This
   is an internal cleanup only (not user-visible) and is deliberately staged after
   the binding model lands, to avoid churning two working transports at once.
-- Increments 4–5 (informer source, CRDs).
+- Increment 4 (Kubernetes-informer source) — a non-interactive `Source`; needs a
+  decision on output routing (which sink the run reports to).
+- Increment 5 (CRDs / operator) — expressing manifests and bindings as cluster
+  resources with a controller; a larger architectural commitment
+  (controller-runtime, codegen, RBAC) best reviewed on its own.

@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"aurora-capcompute/aurora"
+
+	"aurora-k8s-agent/internal/binding"
 )
 
 type File struct {
@@ -44,6 +46,9 @@ func Load(path string, provider aurora.DispatcherProvider) (*Set, error) {
 }
 
 func Parse(raw []byte, provider aurora.DispatcherProvider) (*Set, error) {
+	if binding.IsBindingFormat(raw) {
+		return parseBindings(raw, provider)
+	}
 	var file File
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	decoder.DisallowUnknownFields()
@@ -95,4 +100,33 @@ func (s *Set) Authorize(userID, channelID string) (User, bool) {
 	}
 	_, ok = user.AllowedChannels[channelID]
 	return user, ok
+}
+
+// parseBindings builds the Slack authorization set from the shared named-manifest
+// bindings format. Users are Slack user IDs (U…) and scopes are channel IDs.
+func parseBindings(raw []byte, provider aurora.DispatcherProvider) (*Set, error) {
+	resolved, err := binding.ForSource(raw, "slack", provider)
+	if err != nil {
+		return nil, err
+	}
+	set := &Set{users: make(map[string]User)}
+	for _, r := range resolved {
+		channels := make(map[string]struct{}, len(r.Scopes))
+		for _, scope := range r.Scopes {
+			channels[scope] = struct{}{}
+		}
+		for _, subject := range r.Users {
+			if _, dup := set.users[subject]; dup {
+				return nil, fmt.Errorf("Slack user %s is bound more than once", subject)
+			}
+			set.users[subject] = User{
+				ID: subject, AllowedChannels: channels,
+				Manifest: r.Manifest, Digest: r.Digest,
+			}
+		}
+	}
+	if len(set.users) == 0 {
+		return nil, errors.New("policy must bind at least one Slack user")
+	}
+	return set, nil
 }
