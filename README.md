@@ -178,6 +178,26 @@ policy:
               require_approval: true
 ```
 
+### Brains as OCI artifacts
+
+The reasoning **brain** (a wasm module) can be pulled from an OCI registry instead
+of using the one embedded at build time. Set `AURORA_BRAINS` to a comma-separated
+list of references:
+
+```sh
+AURORA_BRAINS=ghcr.io/acme/brain-k8s:1.4,ghcr.io/acme/brain-ops:2.0
+AURORA_BRAIN_DEFAULT=brain-k8s          # optional; defaults to the first ref
+AURORA_REGISTRY_USERNAME=…              # optional registry auth
+AURORA_REGISTRY_PASSWORD=…
+```
+
+A brain artifact is an OCI image whose config blob is the brain's **declaration**
+(`{id, capabilities: [{name, optional}]}`) and whose wasm is a layer
+(`application/vnd.aurora.brain.wasm.v1+wasm`). The declared capability set is the
+superset a manifest is checked against. With `AURORA_BRAINS` unset, the embedded
+`kubernetes-agent` brain is used (unchanged). Brain bytes are pinned by digest, as
+before.
+
 ### Named manifests and bindings
 
 Instead of copying a manifest into every user, you can define each manifest once

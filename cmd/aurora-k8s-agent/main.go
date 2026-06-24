@@ -25,6 +25,7 @@ import (
 	"aurora-dispatchers/registry"
 	"aurora-k8s-agent/internal/assembly"
 	"aurora-k8s-agent/internal/bot"
+	"aurora-k8s-agent/internal/oci"
 	"aurora-k8s-agent/internal/policy"
 	slackclient "aurora-k8s-agent/internal/slack"
 	"aurora-k8s-agent/internal/slackbot"
@@ -97,8 +98,12 @@ func run() error {
 	defer runtimeStore.Close()
 
 	sessionStore := memory.NewSessionStore[string, aurora.RunContext]()
+	brains, err := buildBrainProvider(ctx, logger)
+	if err != nil {
+		return err
+	}
 	runtime, err := aurora.NewRuntime(ctx, aurora.Config{
-		Brains:       assembly.BrainProvider{},
+		Brains:       brains,
 		Dispatchers:  provider,
 		StateStore:   runtimeStore,
 		TaskStore:    runtimeStore,
@@ -184,6 +189,41 @@ func sourceKinds() ([]string, error) {
 		return nil, errors.New("no sources configured (set AURORA_SOURCES or AURORA_CHANNEL)")
 	}
 	return kinds, nil
+}
+
+// buildBrainProvider selects the brain source. With AURORA_BRAINS set (a comma
+// list of OCI references) brains are pulled from registries; otherwise the
+// embedded kubernetes-agent brain is used. Registry auth comes from
+// AURORA_REGISTRY_USERNAME/PASSWORD; AURORA_REGISTRY_PLAIN_HTTP=true uses HTTP.
+func buildBrainProvider(ctx context.Context, logger *slog.Logger) (aurora.BrainProvider, error) {
+	refs := splitList(os.Getenv("AURORA_BRAINS"))
+	if len(refs) == 0 {
+		return assembly.BrainProvider{}, nil
+	}
+	var opts []oci.Option
+	if user := os.Getenv("AURORA_REGISTRY_USERNAME"); user != "" {
+		opts = append(opts, oci.WithBasicAuth(user, os.Getenv("AURORA_REGISTRY_PASSWORD")))
+	}
+	if strings.EqualFold(os.Getenv("AURORA_REGISTRY_PLAIN_HTTP"), "true") {
+		opts = append(opts, oci.WithPlainHTTP(true))
+	}
+	provider, err := assembly.NewOCIBrainProvider(ctx, refs, os.Getenv("AURORA_BRAIN_DEFAULT"), oci.NewRemotePuller(opts...))
+	if err != nil {
+		return nil, fmt.Errorf("load brains from OCI: %w", err)
+	}
+	logger.Info("loaded brains from OCI", "count", len(refs), "default", provider.DefaultID())
+	return provider, nil
+}
+
+// splitList parses a comma-separated env value, trimming and dropping blanks.
+func splitList(raw string) []string {
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func buildTelegram(

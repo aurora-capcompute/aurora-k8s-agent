@@ -20,7 +20,10 @@ Dependencies are pinned as git submodules under `third_party/`.
 
 ```
 cmd/aurora-k8s-agent/   entry point; AURORA_SOURCES runs telegram and/or slack
-internal/assembly/      brain embed, dispatcher provider, Secret guard
+internal/assembly/      brain provider (embedded + OCI), dispatcher provider, Secret guard
+internal/oci/           pull brain artifacts (wasm + declaration) from OCI registries
+internal/brainspec/     brain manifest: declared capabilities (per-cap optional flag)
+internal/binding/       named-manifest bindings (source × subject × scope)
 internal/source/        Source interface + concurrent multi-source runner
 internal/bot/           Telegram service (service/commands/callbacks/events/render)
 internal/policy/        per-user manifest and chat authorization (Telegram, int64 IDs)
