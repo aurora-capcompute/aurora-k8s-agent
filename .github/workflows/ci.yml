@@ -35,6 +35,15 @@ jobs:
           helm template aurora charts/aurora-k8s-agent
           --set secretName=test-secret
           > /tmp/rendered.yaml
+      - run: >-
+          helm lint charts/aurora-k8s-agent
+          --set secretName=test-secret
+          --set controller.enabled=true
+      - run: >-
+          helm template aurora charts/aurora-k8s-agent
+          --set secretName=test-secret
+          --set controller.enabled=true
+          > /tmp/rendered-controller.yaml
 
   container:
     runs-on: ubuntu-latest

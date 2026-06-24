@@ -1,0 +1,154 @@
+{{- if .Values.controller.enabled }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: brains.aurora.dev
+  labels:
+    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
+spec:
+  group: aurora.dev
+  scope: Namespaced
+  names:
+    kind: Brain
+    plural: brains
+    singular: brain
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Artifact
+          type: string
+          jsonPath: .spec.artifact
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [artifact]
+              properties:
+                artifact:
+                  type: string
+                pullSecretRef:
+                  type: string
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: channels.aurora.dev
+  labels:
+    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
+spec:
+  group: aurora.dev
+  scope: Namespaced
+  names:
+    kind: Channel
+    plural: channels
+    singular: channel
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [source, secretRef]
+              properties:
+                source:
+                  type: string
+                  enum: [telegram, slack]
+                secretRef:
+                  type: string
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: functioninstances.aurora.dev
+  labels:
+    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
+spec:
+  group: aurora.dev
+  scope: Namespaced
+  names:
+    kind: FunctionInstance
+    plural: functioninstances
+    singular: functioninstance
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Brain
+          type: string
+          jsonPath: .spec.brainRef
+        - name: Channel
+          type: string
+          jsonPath: .spec.channelRef
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [brainRef, channelRef, capabilities, subjects]
+              properties:
+                brainRef:
+                  type: string
+                channelRef:
+                  type: string
+                systemPrompt:
+                  type: string
+                capabilities:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
+                      settings:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                subjects:
+                  type: object
+                  required: [users, scopes]
+                  properties:
+                    users:
+                      type: array
+                      items:
+                        type: string
+                    scopes:
+                      type: array
+                      items:
+                        type: string
+                children:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+{{- end }}

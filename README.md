@@ -198,6 +198,36 @@ superset a manifest is checked against. With `AURORA_BRAINS` unset, the embedded
 `kubernetes-agent` brain is used (unchanged). Brain bytes are pinned by digest, as
 before.
 
+### Control plane (CRDs)
+
+With `controller.enabled=true` the agent also runs an in-cluster controller that
+watches three namespaced CRDs and reconciles them into its configuration:
+
+- **`Brain`** — an OCI brain artifact (`spec.artifact`). Status reports the
+  resolved digest and the brain's declared capabilities.
+- **`FunctionInstance`** — the deployable "manifest": a `brainRef`, the granted
+  `capabilities` (validated as a subset of the brain's declaration), `subjects`,
+  and a `channelRef`.
+- **`Channel`** — a transport (`telegram`/`slack`) and its `secretRef`.
+
+```yaml
+apiVersion: aurora.dev/v1alpha1
+kind: FunctionInstance
+metadata: {name: ops-on-telegram}
+spec:
+  brainRef: brain-k8s          # -> a Brain
+  channelRef: team-telegram    # -> a Channel
+  capabilities:
+    - {name: k8s.get, settings: {namespaces: [default]}}
+  subjects: {users: ["42"], scopes: ["-100123"]}
+```
+
+The controller writes `.status.ready` (and a message) on each resource. A grant
+that exceeds the brain's declared capabilities is rejected with a status message
+and produces no binding. The controller needs `rbac.create` (it adds a ClusterRole
+to watch the CRDs). Live application of changes to running channels is staged
+follow-up work; brain-set changes are applied on (re)start.
+
 ### Named manifests and bindings
 
 Instead of copying a manifest into every user, you can define each manifest once

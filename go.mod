@@ -14,6 +14,8 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.46
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/slack-go/slack v0.26.0
+	k8s.io/apimachinery v0.33.1
+	k8s.io/client-go v0.33.1
 	oras.land/oras-go/v2 v2.6.1
 )
 
@@ -64,8 +66,6 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/api v0.33.1 // indirect
-	k8s.io/apimachinery v0.33.1 // indirect
-	k8s.io/client-go v0.33.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect

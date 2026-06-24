@@ -58,6 +58,29 @@ spec:
             - name: SLACK_BOT_TOKEN_FILE
               value: /var/run/aurora-secrets/slack-bot-token
             {{- end }}
+            {{- if .Values.brains }}
+            - name: AURORA_BRAINS
+              value: {{ join "," .Values.brains | quote }}
+            {{- if .Values.brainDefault }}
+            - name: AURORA_BRAIN_DEFAULT
+              value: {{ .Values.brainDefault | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.registry.username }}
+            - name: AURORA_REGISTRY_USERNAME
+              value: {{ .Values.registry.username | quote }}
+            - name: AURORA_REGISTRY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "aurora-k8s-agent.secretName" . }}
+                  key: {{ .Values.registry.passwordKey }}
+            {{- end }}
+            {{- if .Values.controller.enabled }}
+            - name: AURORA_CONTROLLER
+              value: "true"
+            - name: AURORA_CONTROLLER_NAMESPACE
+              value: {{ .Values.controller.namespace | quote }}
+            {{- end }}
             - name: AURORA_TASK_SECRET_FILE
               value: /var/run/aurora-secrets/task-secret
             - name: AURORA_STATE_KEY_FILE

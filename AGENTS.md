@@ -23,6 +23,8 @@ cmd/aurora-k8s-agent/   entry point; AURORA_SOURCES runs telegram and/or slack
 internal/assembly/      brain provider (embedded + OCI), dispatcher provider, Secret guard
 internal/oci/           pull brain artifacts (wasm + declaration) from OCI registries
 internal/brainspec/     brain manifest: declared capabilities (per-cap optional flag)
+internal/apis/          v1alpha1 control-plane types (Brain/FunctionInstance/Channel)
+internal/controller/    CRD informer + reconcile (pull brains, validate grants, bind)
 internal/binding/       named-manifest bindings (source × subject × scope)
 internal/source/        Source interface + concurrent multi-source runner
 internal/bot/           Telegram service (service/commands/callbacks/events/render)

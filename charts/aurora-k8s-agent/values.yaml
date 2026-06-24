@@ -5,6 +5,26 @@ image:
 
 imagePullSecrets: []
 
+# Brains pulled from OCI registries (sets AURORA_BRAINS). Empty uses the brain
+# embedded at build time.
+brains: []
+# brains:
+#   - ghcr.io/acme/brain-k8s:1.4
+brainDefault: ""        # brain id used when a manifest omits one; empty = first
+
+# Registry auth for pulling brains. The password is read from the Secret under
+# `passwordKey`.
+registry:
+  username: ""
+  passwordKey: registry-password
+
+# Control-plane controller: watch Brain/FunctionInstance/Channel CRDs and
+# reconcile them into runtime config. Installs the CRDs and grants RBAC to watch
+# them. Requires rbac.create.
+controller:
+  enabled: false
+  namespace: ""         # watch scope; empty = all namespaces
+
 # Communication sources (callers). One or more of: telegram, slack — they run
 # concurrently against the same runtime (AURORA_SOURCES).
 # - telegram: secret must contain `telegram-bot-token`. Policy users are keyed by

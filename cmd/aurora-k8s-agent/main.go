@@ -25,6 +25,7 @@ import (
 	"aurora-dispatchers/registry"
 	"aurora-k8s-agent/internal/assembly"
 	"aurora-k8s-agent/internal/bot"
+	"aurora-k8s-agent/internal/controller"
 	"aurora-k8s-agent/internal/oci"
 	"aurora-k8s-agent/internal/policy"
 	slackclient "aurora-k8s-agent/internal/slack"
@@ -36,6 +37,9 @@ import (
 	"aurora-k8s-agent/internal/telegram"
 	"aurora-stores/memory"
 	aurorasqlite "aurora-stores/sqlite"
+
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 )
 
 var version = "dev"
@@ -162,6 +166,14 @@ func run() error {
 		}
 	}
 
+	if strings.EqualFold(os.Getenv("AURORA_CONTROLLER"), "true") {
+		ctrl, err := buildController(provider, logger)
+		if err != nil {
+			return err
+		}
+		sources = append(sources, ctrl)
+	}
+
 	ready.Store(true)
 	logger.Info("Aurora agent started", "version", version, "sources", kinds)
 	return source.Run(ctx, logger, sources...)
@@ -200,6 +212,17 @@ func buildBrainProvider(ctx context.Context, logger *slog.Logger) (aurora.BrainP
 	if len(refs) == 0 {
 		return assembly.BrainProvider{}, nil
 	}
+	provider, err := assembly.NewOCIBrainProvider(ctx, refs, os.Getenv("AURORA_BRAIN_DEFAULT"), oci.NewRemotePuller(ociOptionsFromEnv()...))
+	if err != nil {
+		return nil, fmt.Errorf("load brains from OCI: %w", err)
+	}
+	logger.Info("loaded brains from OCI", "count", len(refs), "default", provider.DefaultID())
+	return provider, nil
+}
+
+// ociOptionsFromEnv builds registry-auth options shared by the brain provider and
+// the controller's puller.
+func ociOptionsFromEnv() []oci.Option {
 	var opts []oci.Option
 	if user := os.Getenv("AURORA_REGISTRY_USERNAME"); user != "" {
 		opts = append(opts, oci.WithBasicAuth(user, os.Getenv("AURORA_REGISTRY_PASSWORD")))
@@ -207,12 +230,28 @@ func buildBrainProvider(ctx context.Context, logger *slog.Logger) (aurora.BrainP
 	if strings.EqualFold(os.Getenv("AURORA_REGISTRY_PLAIN_HTTP"), "true") {
 		opts = append(opts, oci.WithPlainHTTP(true))
 	}
-	provider, err := assembly.NewOCIBrainProvider(ctx, refs, os.Getenv("AURORA_BRAIN_DEFAULT"), oci.NewRemotePuller(opts...))
+	return opts
+}
+
+// buildController constructs the in-cluster control-plane controller. It watches
+// Brain/FunctionInstance/Channel resources and reconciles them, writing status
+// back. Enabled with AURORA_CONTROLLER=true; AURORA_CONTROLLER_NAMESPACE scopes
+// the watch (empty = all namespaces).
+func buildController(provider aurora.DispatcherProvider, logger *slog.Logger) (source.Source, error) {
+	cfg, err := rest.InClusterConfig()
 	if err != nil {
-		return nil, fmt.Errorf("load brains from OCI: %w", err)
+		return nil, fmt.Errorf("controller requires in-cluster config: %w", err)
 	}
-	logger.Info("loaded brains from OCI", "count", len(refs), "default", provider.DefaultID())
-	return provider, nil
+	dyn, err := dynamic.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("controller dynamic client: %w", err)
+	}
+	onResolved := func(res controller.Resolved) {
+		logger.Info("control plane resolved",
+			"brainRefs", res.BrainRefs, "bindings", len(res.Bindings))
+	}
+	return controller.New(dyn, os.Getenv("AURORA_CONTROLLER_NAMESPACE"),
+		oci.NewRemotePuller(ociOptionsFromEnv()...), provider, onResolved, logger), nil
 }
 
 // splitList parses a comma-separated env value, trimming and dropping blanks.
