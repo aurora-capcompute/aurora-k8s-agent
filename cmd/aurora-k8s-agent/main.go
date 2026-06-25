@@ -36,6 +36,7 @@ import (
 	"aurora-k8s-agent/internal/state"
 	"aurora-k8s-agent/internal/telegram"
 	"aurora-k8s-agent/internal/webapi"
+	"aurora-k8s-agent/internal/webchannel"
 	"aurora-stores/memory"
 	aurorasqlite "aurora-stores/sqlite"
 
@@ -128,10 +129,14 @@ func run() error {
 		}
 	}()
 
+	// The web channel registry is populated by control-plane reconciliation and
+	// read by the API server, so create it before both.
+	webChannel := webchannel.New()
+
 	var ready atomic.Bool
 	health := startHealthServer(ctx, env("AURORA_HEALTH_ADDR", ":8080"), &ready, logger)
 	defer health.Shutdown(context.Background())
-	if api := startAPIServer(ctx, env("AURORA_API_ADDR", ":8081"), runtime, logger); api != nil {
+	if api := startAPIServer(ctx, env("AURORA_API_ADDR", ":8081"), runtime, webChannel, logger); api != nil {
 		defer api.Shutdown(context.Background())
 	}
 
@@ -169,13 +174,13 @@ func run() error {
 
 	switch controlPlaneKind() {
 	case "k8s":
-		ctrl, err := buildController(provider, logger)
+		ctrl, err := buildController(provider, webChannel, logger)
 		if err != nil {
 			return err
 		}
 		sources = append(sources, ctrl)
 	case "fs":
-		fsControl, err := buildFileControlPlane(provider, logger)
+		fsControl, err := buildFileControlPlane(provider, webChannel, logger)
 		if err != nil {
 			return err
 		}
@@ -214,7 +219,7 @@ func controlPlaneKind() string {
 
 // buildFileControlPlane builds the filesystem control plane reading manifests
 // from AURORA_RESOURCES_DIR (re-scanned every AURORA_RESOURCES_RESYNC, default 30s).
-func buildFileControlPlane(provider aurora.DispatcherProvider, logger *slog.Logger) (source.Source, error) {
+func buildFileControlPlane(provider aurora.DispatcherProvider, webChannel *webchannel.Channel, logger *slog.Logger) (source.Source, error) {
 	dir := strings.TrimSpace(os.Getenv("AURORA_RESOURCES_DIR"))
 	if dir == "" {
 		return nil, errors.New("fs control plane requires AURORA_RESOURCES_DIR")
@@ -230,6 +235,7 @@ func buildFileControlPlane(provider aurora.DispatcherProvider, logger *slog.Logg
 	onResolved := func(res controller.Resolved) {
 		logger.Info("control plane resolved",
 			"brainRefs", res.BrainRefs, "bindings", len(res.Bindings))
+		webChannel.Apply(res)
 	}
 	return controller.NewFileSource(dir, resync,
 		oci.NewRemotePuller(ociOptionsFromEnv()...), provider, onResolved, logger), nil
@@ -292,7 +298,7 @@ func ociOptionsFromEnv() []oci.Option {
 // Brain/FunctionInstance/Channel resources and reconciles them, writing status
 // back. Enabled with AURORA_CONTROLLER=true; AURORA_CONTROLLER_NAMESPACE scopes
 // the watch (empty = all namespaces).
-func buildController(provider aurora.DispatcherProvider, logger *slog.Logger) (source.Source, error) {
+func buildController(provider aurora.DispatcherProvider, webChannel *webchannel.Channel, logger *slog.Logger) (source.Source, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, fmt.Errorf("controller requires in-cluster config: %w", err)
@@ -304,6 +310,7 @@ func buildController(provider aurora.DispatcherProvider, logger *slog.Logger) (s
 	onResolved := func(res controller.Resolved) {
 		logger.Info("control plane resolved",
 			"brainRefs", res.BrainRefs, "bindings", len(res.Bindings))
+		webChannel.Apply(res)
 	}
 	return controller.New(dyn, os.Getenv("AURORA_CONTROLLER_NAMESPACE"),
 		oci.NewRemotePuller(ociOptionsFromEnv()...), provider, onResolved, logger), nil
@@ -416,12 +423,13 @@ func startAPIServer(
 	ctx context.Context,
 	address string,
 	runtime aurora.Runtime,
+	channel *webchannel.Channel,
 	logger *slog.Logger,
 ) *http.Server {
 	if strings.TrimSpace(address) == "" {
 		return nil
 	}
-	return startServer(ctx, "api", address, webapi.Handler(runtime), logger)
+	return startServer(ctx, "api", address, webapi.Handler(runtime, channel), logger)
 }
 
 func startServer(ctx context.Context, name, address string, handler http.Handler, logger *slog.Logger) *http.Server {

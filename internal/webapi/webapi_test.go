@@ -11,7 +11,10 @@ import (
 
 	"aurora-capcompute/aurora"
 
+	"aurora-k8s-agent/internal/binding"
+	"aurora-k8s-agent/internal/controller"
 	"aurora-k8s-agent/internal/webapi"
+	"aurora-k8s-agent/internal/webchannel"
 )
 
 // fakeRuntime embeds aurora.Runtime so it satisfies the interface; only the
@@ -80,7 +83,7 @@ func TestReadAndInteractiveRoutes(t *testing.T) {
 		thread:  aurora.ThreadSnapshot{ThreadSummary: aurora.ThreadSummary{ID: "t1"}},
 		run:     aurora.RunSnapshot{ID: "r1", ThreadID: "t1"},
 	}
-	h := webapi.Handler(fake)
+	h := webapi.Handler(fake, nil)
 
 	t.Run("list threads", func(t *testing.T) {
 		rec := do(t, h, http.MethodGet, "/api/threads", "")
@@ -127,14 +130,14 @@ func TestReadAndInteractiveRoutes(t *testing.T) {
 
 func TestErrorStatusMapping(t *testing.T) {
 	t.Run("not found -> 404", func(t *testing.T) {
-		h := webapi.Handler(&fakeRuntime{notFound: true})
+		h := webapi.Handler(&fakeRuntime{notFound: true}, nil)
 		rec := do(t, h, http.MethodGet, "/api/threads/nope", "")
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("status %d, want 404", rec.Code)
 		}
 	})
 	t.Run("conflict -> 409", func(t *testing.T) {
-		h := webapi.Handler(&fakeRuntime{conflict: true})
+		h := webapi.Handler(&fakeRuntime{conflict: true}, nil)
 		rec := do(t, h, http.MethodPost, "/api/runs/r1/retry", `{"mode":"restart"}`)
 		if rec.Code != http.StatusConflict {
 			t.Fatalf("status %d, want 409", rec.Code)
@@ -148,7 +151,7 @@ func TestEventStreamSSE(t *testing.T) {
 	close(ch)
 	fake := &fakeRuntime{initial: aurora.Event{Type: "snapshot"}, events: ch}
 
-	server := httptest.NewServer(webapi.Handler(fake))
+	server := httptest.NewServer(webapi.Handler(fake, nil))
 	defer server.Close()
 
 	resp, err := http.Get(server.URL + "/api/threads/t1/events")
@@ -163,4 +166,53 @@ func TestEventStreamSSE(t *testing.T) {
 	if !strings.Contains(string(body), "event: snapshot") || !strings.Contains(string(body), "event: run.updated") {
 		t.Fatalf("sse body missing events:\n%s", body)
 	}
+}
+
+func TestManifestRoutes(t *testing.T) {
+	manifest := aurora.Manifest{Version: aurora.ManifestVersion, Brain: "kubernetes-agent"}
+	ch := webchannel.New()
+	ch.Apply(controller.Resolved{Bindings: []controller.SourceBinding{{
+		Source:   "web",
+		Name:     "ops",
+		Resolved: binding.Resolved{Manifest: manifest, Digest: controller.Digest(manifest)},
+	}}})
+
+	fake := &fakeRuntime{
+		threads: []aurora.ThreadSummary{
+			{ID: "t1", Manifest: manifest},                        // belongs to "ops"
+			{ID: "t2", Manifest: aurora.Manifest{Brain: "other"}}, // unrelated
+		},
+		thread: aurora.ThreadSnapshot{ThreadSummary: aurora.ThreadSummary{ID: "new"}},
+	}
+	h := webapi.Handler(fake, ch)
+
+	t.Run("list manifests", func(t *testing.T) {
+		rec := do(t, h, http.MethodGet, "/api/manifests", "")
+		var got []webchannel.ManifestInfo
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got) != 1 || got[0].Name != "ops" {
+			t.Fatalf("manifests = %s (err %v)", rec.Body.String(), err)
+		}
+	})
+
+	t.Run("threads for manifest", func(t *testing.T) {
+		rec := do(t, h, http.MethodGet, "/api/manifests/ops/threads", "")
+		var got []aurora.ThreadSummary
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || len(got) != 1 || got[0].ID != "t1" {
+			t.Fatalf("manifest threads = %s (err %v)", rec.Body.String(), err)
+		}
+	})
+
+	t.Run("create thread under manifest", func(t *testing.T) {
+		rec := do(t, h, http.MethodPost, "/api/manifests/ops/threads", "")
+		if rec.Code != http.StatusOK || fake.lastManifest.Brain != "kubernetes-agent" {
+			t.Fatalf("status %d, manifest %+v", rec.Code, fake.lastManifest)
+		}
+	})
+
+	t.Run("unknown manifest is 404", func(t *testing.T) {
+		rec := do(t, h, http.MethodGet, "/api/manifests/nope/threads", "")
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status %d, want 404", rec.Code)
+		}
+	})
 }

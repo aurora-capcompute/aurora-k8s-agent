@@ -11,12 +11,21 @@ import (
 	"net/http"
 
 	"aurora-capcompute/aurora"
+
+	"aurora-k8s-agent/internal/webchannel"
 )
 
-// Handler builds an http.Handler exposing the agent API under /api.
-func Handler(runtime aurora.Runtime) http.Handler {
-	h := &handler{runtime: runtime}
+// Handler builds an http.Handler exposing the agent API under /api. channel may
+// be nil when the web channel is not enabled, in which case the manifest routes
+// report 404.
+func Handler(runtime aurora.Runtime, channel *webchannel.Channel) http.Handler {
+	h := &handler{runtime: runtime, channel: channel}
 	mux := http.NewServeMux()
+
+	// Manifests bound to the web channel (the UI switcher) and their threads.
+	mux.HandleFunc("GET /api/manifests", h.listManifests)
+	mux.HandleFunc("GET /api/manifests/{name}/threads", h.manifestThreads)
+	mux.HandleFunc("POST /api/manifests/{name}/threads", h.createManifestThread)
 
 	// Read-only projections.
 	mux.HandleFunc("GET /api/threads", h.listThreads)
@@ -41,6 +50,47 @@ func Handler(runtime aurora.Runtime) http.Handler {
 
 type handler struct {
 	runtime aurora.Runtime
+	channel *webchannel.Channel
+}
+
+// --- manifests bound to the web channel ---
+
+func (h *handler) listManifests(w http.ResponseWriter, _ *http.Request) {
+	if h.channel == nil {
+		writeJSON(w, []webchannel.ManifestInfo{}, nil)
+		return
+	}
+	writeJSON(w, h.channel.Manifests(), nil)
+}
+
+func (h *handler) manifestThreads(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if h.channel == nil || !h.channel.Has(name) {
+		http.Error(w, "manifest not found", http.StatusNotFound)
+		return
+	}
+	threads := make([]aurora.ThreadSummary, 0)
+	for _, t := range h.runtime.ListThreads() {
+		if bound, ok := h.channel.NameForManifest(t.Manifest); ok && bound == name {
+			threads = append(threads, t)
+		}
+	}
+	writeJSON(w, threads, nil)
+}
+
+func (h *handler) createManifestThread(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if h.channel == nil {
+		http.Error(w, "web channel not enabled", http.StatusNotFound)
+		return
+	}
+	manifest, ok := h.channel.Manifest(name)
+	if !ok {
+		http.Error(w, "manifest not found", http.StatusNotFound)
+		return
+	}
+	snap, err := h.runtime.CreateThread(manifest)
+	writeJSON(w, snap, err)
 }
 
 // --- read-only ---

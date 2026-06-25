@@ -47,6 +47,9 @@ type Inputs struct {
 // SourceBinding is a validated function instance projected onto a source.
 type SourceBinding struct {
 	Source string
+	// Name is the FunctionInstance name, so a binding is addressable (e.g. by a
+	// web UI switching between the manifests bound to a channel).
+	Name string
 	binding.Resolved
 }
 
@@ -138,6 +141,7 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 
 		res.Bindings = append(res.Bindings, SourceBinding{
 			Source: channel.Source,
+			Name:   fi.Name,
 			Resolved: binding.Resolved{
 				Users:    append([]string(nil), fi.Spec.Subjects.Users...),
 				Scopes:   append([]string(nil), fi.Spec.Subjects.Scopes...),
@@ -206,14 +210,21 @@ func toCapabilities(in []v1alpha1.Capability) []aurora.CapabilityConfig {
 func validateChannel(spec v1alpha1.ChannelSpec) error {
 	switch spec.Source {
 	case "telegram", "slack":
+		if spec.SecretRef == "" {
+			return fmt.Errorf("secretRef is required")
+		}
+	case "web":
+		// The web channel is driven over HTTP and carries no transport secret.
 	default:
-		return fmt.Errorf("unsupported source %q (want telegram or slack)", spec.Source)
-	}
-	if spec.SecretRef == "" {
-		return fmt.Errorf("secretRef is required")
+		return fmt.Errorf("unsupported source %q (want telegram, slack, or web)", spec.Source)
 	}
 	return nil
 }
+
+// Digest returns the canonical content digest of a manifest, matching the digest
+// recorded on a resolved binding. It lets callers group threads by the manifest
+// that produced them.
+func Digest(m aurora.Manifest) string { return digest(m) }
 
 func capabilityNames(m brainspec.Manifest) []string {
 	out := make([]string, len(m.Capabilities))
