@@ -1,0 +1,17 @@
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-api
+  labels:
+    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "aurora-k8s-agent.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: api
+      port: {{ .Values.service.port }}
+      targetPort: api
+      protocol: TCP
+{{- end }}

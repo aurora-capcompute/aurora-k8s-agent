@@ -32,6 +32,7 @@ controller:
 # - slack: secret must contain `slack-app-token` (xapp-…, connections:write) and
 #   `slack-bot-token` (xoxb-…). Policy users are keyed by Slack user IDs (U…) with
 #   `allowed_channels`. Uses Slack Socket Mode (no public ingress).
+# Set to [] to run headless (no chat channel) — e.g. an API/UI-only deployment.
 channels:
   - telegram
 
@@ -179,8 +180,36 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
+# Read-only execution-graph HTTP API (GET /api/threads, /api/threads/{id}/graph,
+# /api/runs/{id}/graph, /api/runs/{id}/journal) on its own port, separate from the
+# health/probe port, so a UI can roam the run history.
+api:
+  enabled: true
+  port: 8081
+
+# ClusterIP Service fronting the API port. Set type to LoadBalancer/NodePort to
+# expose outside the cluster, or use the Ingress below.
+service:
+  type: ClusterIP
+  port: 80
+
+# Optional Ingress for the API Service.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: aurora.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
 networkPolicy:
   enabled: false
+  # Ingress 'from' peers allowed to reach the API port (e.g. the namespace/pod
+  # serving the UI). Empty allows all sources on the API port.
+  apiAllowFrom: []
 
 podDisruptionBudget:
   enabled: true

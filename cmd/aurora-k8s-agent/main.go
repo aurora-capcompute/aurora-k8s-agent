@@ -128,13 +128,13 @@ func run() error {
 	}()
 
 	var ready atomic.Bool
-	health := startHealthServer(ctx, env("AURORA_HEALTH_ADDR", ":8080"), &ready, logger, runtime)
+	health := startHealthServer(ctx, env("AURORA_HEALTH_ADDR", ":8080"), &ready, logger)
 	defer health.Shutdown(context.Background())
-
-	kinds, err := sourceKinds()
-	if err != nil {
-		return err
+	if api := startAPIServer(ctx, env("AURORA_API_ADDR", ":8081"), runtime, logger); api != nil {
+		defer api.Shutdown(context.Background())
 	}
+
+	kinds := sourceKinds()
 	var (
 		sources []source.Source
 		closers []func()
@@ -166,29 +166,86 @@ func run() error {
 		}
 	}
 
-	if strings.EqualFold(os.Getenv("AURORA_CONTROLLER"), "true") {
+	switch controlPlaneKind() {
+	case "k8s":
 		ctrl, err := buildController(provider, logger)
 		if err != nil {
 			return err
 		}
 		sources = append(sources, ctrl)
+	case "fs":
+		fsControl, err := buildFileControlPlane(provider, logger)
+		if err != nil {
+			return err
+		}
+		sources = append(sources, fsControl)
+	case "none":
+		// No control plane.
+	default:
+		return fmt.Errorf("unknown control plane %q (want k8s, fs, or none)", controlPlaneKind())
 	}
 
 	ready.Store(true)
-	logger.Info("Aurora agent started", "version", version, "sources", kinds)
+	if len(sources) == 0 {
+		// Headless: no chat channels and no control plane. Serve the HTTP API (if
+		// enabled) and block until shutdown.
+		logger.Info("Aurora agent started (headless)", "version", version)
+		<-ctx.Done()
+		return nil
+	}
+	logger.Info("Aurora agent started", "version", version, "sources", kinds, "control_plane", controlPlaneKind())
 	return source.Run(ctx, logger, sources...)
 }
 
-// sourceKinds resolves the enabled sources from AURORA_SOURCES (a comma-separated
-// list, e.g. "telegram,slack"), falling back to the single-channel AURORA_CHANNEL
-// and then "telegram". Order is preserved; duplicates are dropped.
-func sourceKinds() ([]string, error) {
+// controlPlaneKind selects the control-plane channel: "k8s" (the in-cluster
+// informer), "fs" (read resource manifests from AURORA_RESOURCES_DIR), or "none".
+// AURORA_CONTROL_PLANE takes precedence; AURORA_CONTROLLER=true maps to "k8s" for
+// backward compatibility; the default is "none".
+func controlPlaneKind() string {
+	if v := strings.TrimSpace(os.Getenv("AURORA_CONTROL_PLANE")); v != "" {
+		return strings.ToLower(v)
+	}
+	if strings.EqualFold(os.Getenv("AURORA_CONTROLLER"), "true") {
+		return "k8s"
+	}
+	return "none"
+}
+
+// buildFileControlPlane builds the filesystem control plane reading manifests
+// from AURORA_RESOURCES_DIR (re-scanned every AURORA_RESOURCES_RESYNC, default 30s).
+func buildFileControlPlane(provider aurora.DispatcherProvider, logger *slog.Logger) (source.Source, error) {
+	dir := strings.TrimSpace(os.Getenv("AURORA_RESOURCES_DIR"))
+	if dir == "" {
+		return nil, errors.New("fs control plane requires AURORA_RESOURCES_DIR")
+	}
+	resync := 30 * time.Second
+	if raw := strings.TrimSpace(os.Getenv("AURORA_RESOURCES_RESYNC")); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid AURORA_RESOURCES_RESYNC %q: %w", raw, err)
+		}
+		resync = parsed
+	}
+	onResolved := func(res controller.Resolved) {
+		logger.Info("control plane resolved",
+			"brainRefs", res.BrainRefs, "bindings", len(res.Bindings))
+	}
+	return controller.NewFileSource(dir, resync,
+		oci.NewRemotePuller(ociOptionsFromEnv()...), provider, onResolved, logger), nil
+}
+
+// sourceKinds resolves the enabled chat sources from AURORA_SOURCES (a
+// comma-separated list, e.g. "telegram,slack"), falling back to the
+// single-channel AURORA_CHANNEL and then "telegram". "none" (or an empty list)
+// disables chat sources so the agent can run headless. Order is preserved;
+// duplicates are dropped.
+func sourceKinds() []string {
 	raw := env("AURORA_SOURCES", env("AURORA_CHANNEL", "telegram"))
 	seen := make(map[string]struct{})
 	var kinds []string
 	for _, part := range strings.Split(raw, ",") {
 		kind := strings.ToLower(strings.TrimSpace(part))
-		if kind == "" {
+		if kind == "" || kind == "none" {
 			continue
 		}
 		if _, dup := seen[kind]; dup {
@@ -197,10 +254,7 @@ func sourceKinds() ([]string, error) {
 		seen[kind] = struct{}{}
 		kinds = append(kinds, kind)
 	}
-	if len(kinds) == 0 {
-		return nil, errors.New("no sources configured (set AURORA_SOURCES or AURORA_CHANNEL)")
-	}
-	return kinds, nil
+	return kinds
 }
 
 // buildBrainProvider selects the brain source. With AURORA_BRAINS set (a comma
@@ -336,7 +390,6 @@ func startHealthServer(
 	address string,
 	ready *atomic.Bool,
 	logger *slog.Logger,
-	runtime aurora.Runtime,
 ) *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/livez", func(w http.ResponseWriter, _ *http.Request) {
@@ -351,11 +404,31 @@ func startHealthServer(
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready\n"))
 	})
+	return startServer(ctx, "health", address, mux, logger)
+}
+
+// startAPIServer serves the read-only execution-graph API on its own port,
+// separate from the health/probe port so it can be exposed (via a Service) on its
+// own. Disabled when address is empty.
+func startAPIServer(
+	ctx context.Context,
+	address string,
+	runtime aurora.Runtime,
+	logger *slog.Logger,
+) *http.Server {
+	if strings.TrimSpace(address) == "" {
+		return nil
+	}
+	mux := http.NewServeMux()
 	registerGraphAPI(mux, runtime)
-	server := &http.Server{Addr: address, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	return startServer(ctx, "api", address, mux, logger)
+}
+
+func startServer(ctx context.Context, name, address string, handler http.Handler, logger *slog.Logger) *http.Server {
+	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("health server", "error", err)
+			logger.Error(name+" server", "error", err)
 		}
 	}()
 	go func() {

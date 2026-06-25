@@ -47,7 +47,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.uid
             - name: AURORA_SOURCES
-              value: {{ join "," .Values.channels | quote }}
+              value: {{ if .Values.channels }}{{ join "," .Values.channels | quote }}{{ else }}"none"{{ end }}
             {{- if has "telegram" .Values.channels }}
             - name: TELEGRAM_BOT_TOKEN_FILE
               value: /var/run/aurora-secrets/telegram-bot-token
@@ -81,6 +81,8 @@ spec:
             - name: AURORA_CONTROLLER_NAMESPACE
               value: {{ .Values.controller.namespace | quote }}
             {{- end }}
+            - name: AURORA_API_ADDR
+              value: {{ if .Values.api.enabled }}{{ printf ":%v" .Values.api.port | quote }}{{ else }}""{{ end }}
             - name: AURORA_TASK_SECRET_FILE
               value: /var/run/aurora-secrets/task-secret
             - name: AURORA_STATE_KEY_FILE
@@ -96,6 +98,10 @@ spec:
           ports:
             - name: health
               containerPort: 8080
+            {{- if .Values.api.enabled }}
+            - name: api
+              containerPort: {{ .Values.api.port }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /livez

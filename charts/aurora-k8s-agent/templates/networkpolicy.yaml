@@ -14,6 +14,15 @@ spec:
     - ports:
         - protocol: TCP
           port: 8080
+    {{- if .Values.api.enabled }}
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.api.port }}
+      {{- with .Values.networkPolicy.apiAllowFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
   egress:
     - ports:
         - protocol: UDP
