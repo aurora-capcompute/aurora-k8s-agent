@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"aurora-capcompute/aurora"
 	"aurora-k8s-agent/internal/slack"
@@ -20,7 +21,7 @@ type Service struct {
 	runtime  aurora.Runtime
 	client   *slack.Client
 	store    *state.Store
-	policies *policy.Set
+	policies atomic.Pointer[policy.Set]
 	logger   *slog.Logger
 	timers   *timerScheduler
 
@@ -35,11 +36,27 @@ func New(
 	policies *policy.Set,
 	logger *slog.Logger,
 ) *Service {
-	return &Service{
-		runtime: runtime, client: client, store: store, policies: policies, logger: logger,
+	s := &Service{
+		runtime: runtime, client: client, store: store, logger: logger,
 		timers:        newTimerScheduler(runtime, logger),
 		subscriptions: make(map[string]func()),
 	}
+	s.policies.Store(policies)
+	return s
+}
+
+// SetPolicies atomically swaps the authorization set, so the control plane can
+// reroute a live bridge when bindings change without dropping the socket.
+func (s *Service) SetPolicies(p *policy.Set) { s.policies.Store(p) }
+
+// authorize routes a subject through the current policy set, tolerating a nil set
+// (no bindings yet) as "not authorized".
+func (s *Service) authorize(userID, channelID string) (policy.User, bool) {
+	p := s.policies.Load()
+	if p == nil {
+		return policy.User{}, false
+	}
+	return p.Authorize(userID, channelID)
 }
 
 // Kind identifies this source. Implements source.Source.
@@ -74,7 +91,7 @@ func (s *Service) HandleMessage(ctx context.Context, event slack.MessageEvent) {
 		_ = s.store.CompleteEvent(ctx, event.EventID)
 		return
 	}
-	user, ok := s.policies.Authorize(event.UserID, event.ChannelID)
+	user, ok := s.authorize(event.UserID, event.ChannelID)
 	if !ok {
 		_ = s.store.CompleteEvent(ctx, event.EventID)
 		return

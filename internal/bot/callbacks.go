@@ -22,7 +22,7 @@ func (s *Service) handleCallback(ctx context.Context, query *telegram.CallbackQu
 	if query.Message == nil {
 		return s.client.AnswerCallback(ctx, query.ID, "This action is no longer available.", true)
 	}
-	user, ok := s.policies.Authorize(query.From.ID, query.Message.Chat.ID)
+	user, ok := s.authorize(query.From.ID, query.Message.Chat.ID)
 	if !ok {
 		return s.client.AnswerCallback(ctx, query.ID, "Not authorized.", true)
 	}

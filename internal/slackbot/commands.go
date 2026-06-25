@@ -19,7 +19,7 @@ func (s *Service) HandleSlash(ctx context.Context, command slack.SlashCommand) {
 	}
 	defer func() { _ = s.store.CompleteEvent(ctx, command.EnvelopeID) }()
 
-	user, ok := s.policies.Authorize(command.UserID, command.ChannelID)
+	user, ok := s.authorize(command.UserID, command.ChannelID)
 	if !ok {
 		_, _ = s.client.PostMessage(ctx, command.ChannelID, "", "You're not authorized to use Aurora here.", nil)
 		return
