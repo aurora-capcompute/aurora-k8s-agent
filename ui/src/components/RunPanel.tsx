@@ -6,9 +6,13 @@ import type { Decision, JournalEntry, TaskSnapshot } from "../types";
 // run controls (stop / retry). It is driven by a runID selected in the graph.
 export function RunPanel({
   runID,
+  tick,
   onChanged,
 }: {
   runID: string;
+  // tick bumps whenever the thread's SSE stream emits, so the panel refetches
+  // journal + pending tasks live without reselecting the node.
+  tick?: number;
   onChanged?: () => void;
 }) {
   const [journal, setJournal] = useState<JournalEntry[]>([]);
@@ -29,7 +33,7 @@ export function RunPanel({
 
   useEffect(() => {
     void reload();
-  }, [reload]);
+  }, [reload, tick]);
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);

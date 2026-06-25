@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, subscribe } from "../api";
 import type { RunGraphNode, RunStatus, ThreadGraph } from "../types";
 import { CallGraph } from "./CallGraph";
+import { ThreadGraphView } from "./ThreadGraphView";
 import { RunPanel } from "./RunPanel";
 
 type Tab = "chat" | "graph" | "revisions";
+type Scope = "thread" | "run";
 
 function StatusBadge({ status }: { status: RunStatus }) {
   return <span className={`badge badge-${status}`}>{status}</span>;
@@ -15,6 +17,8 @@ export function ThreadView({ threadID }: { threadID: string }) {
   const [runGraph, setRunGraph] = useState<RunGraphNode | null>(null);
   const [selectedRun, setSelectedRun] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("chat");
+  const [scope, setScope] = useState<Scope>("thread");
+  const [tick, setTick] = useState(0);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,8 +28,6 @@ export function ThreadView({ threadID }: { threadID: string }) {
     try {
       const g = await api.threadGraph(threadID);
       setGraph(g);
-      const last = g.runs[g.runs.length - 1];
-      if (last) setRunGraph(await api.runGraph(last.run_id));
       setError(null);
     } catch (e) {
       setError(String(e));
@@ -36,14 +38,45 @@ export function ThreadView({ threadID }: { threadID: string }) {
     setGraph(null);
     setRunGraph(null);
     setSelectedRun(null);
+    setScope("thread");
     void reload();
-    const unsubscribe = subscribe(threadID, () => void reload());
+    // Bump tick on every event so child panels (RunPanel) refetch live, and
+    // reload the thread graph itself.
+    const unsubscribe = subscribe(threadID, () => {
+      setTick((t) => t + 1);
+      void reload();
+    });
     return unsubscribe;
   }, [threadID, reload]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [graph]);
+
+  // The run whose call graph the "run" scope shows: the selection, else the
+  // last run in the thread.
+  const focusRun = useMemo(() => {
+    if (selectedRun) return selectedRun;
+    const last = graph?.runs[graph.runs.length - 1];
+    return last?.run_id ?? null;
+  }, [selectedRun, graph]);
+
+  useEffect(() => {
+    if (!focusRun) {
+      setRunGraph(null);
+      return;
+    }
+    let stale = false;
+    api
+      .runGraph(focusRun)
+      .then((g) => {
+        if (!stale) setRunGraph(g);
+      })
+      .catch((e) => setError(String(e)));
+    return () => {
+      stale = true;
+    };
+  }, [focusRun, tick]);
 
   const send = async () => {
     const message = input.trim();
@@ -62,6 +95,7 @@ export function ThreadView({ threadID }: { threadID: string }) {
 
   const inspect = (runID: string) => {
     setSelectedRun(runID);
+    setScope("run");
     setTab("graph");
   };
 
@@ -121,20 +155,47 @@ export function ThreadView({ threadID }: { threadID: string }) {
       )}
 
       {tab === "graph" &&
-        (runGraph ? (
-          <div className="graph-split">
-            <div className="graph-canvas">
-              <CallGraph
-                root={runGraph}
-                selected={selectedRun}
-                onSelect={setSelectedRun}
-              />
+        (graph && graph.runs.length > 0 ? (
+          <div className="graph-wrap">
+            <div className="scope-toggle">
+              {(["thread", "run"] as Scope[]).map((s) => (
+                <button
+                  key={s}
+                  className={scope === s ? "chip active" : "chip"}
+                  onClick={() => setScope(s)}
+                >
+                  {s === "thread" ? "Thread DAG" : "Run call graph"}
+                </button>
+              ))}
             </div>
-            {selectedRun && (
-              <div className="graph-side">
-                <RunPanel runID={selectedRun} onChanged={() => void reload()} />
+            <div className="graph-split">
+              <div className="graph-canvas">
+                {scope === "thread" ? (
+                  <ThreadGraphView
+                    graph={graph}
+                    selected={selectedRun}
+                    onSelect={setSelectedRun}
+                  />
+                ) : runGraph ? (
+                  <CallGraph
+                    root={runGraph}
+                    selected={selectedRun}
+                    onSelect={setSelectedRun}
+                  />
+                ) : (
+                  <div className="empty">No call graph.</div>
+                )}
               </div>
-            )}
+              {selectedRun && (
+                <div className="graph-side">
+                  <RunPanel
+                    runID={selectedRun}
+                    tick={tick}
+                    onChanged={() => void reload()}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="empty">No runs yet.</div>
