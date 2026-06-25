@@ -1,0 +1,234 @@
+:root {
+  --border: #e0e0e0;
+  --bg: #fafafa;
+  --accent: #1565c0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-size: 14px;
+  color: #1a1a1a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 220px 260px 1fr;
+  height: 100vh;
+}
+
+.pane {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.pane.main {
+  border-right: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #777;
+  margin: 4px 0 12px;
+}
+
+.row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--bg);
+}
+
+.row.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.row-title {
+  font-weight: 600;
+}
+
+.row-sub {
+  font-size: 12px;
+  color: #888;
+}
+
+.threads-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.threads-head button {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.empty {
+  color: #999;
+  padding: 8px;
+}
+
+.empty.center {
+  margin: auto;
+}
+
+.error {
+  background: #fdecea;
+  color: #c62828;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+}
+
+.tab {
+  border: none;
+  background: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-transform: capitalize;
+  color: #555;
+}
+
+.tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.thread-id {
+  margin-left: auto;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.exchange {
+  margin-bottom: 16px;
+}
+
+.msg {
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+  white-space: pre-wrap;
+  max-width: 70%;
+}
+
+.msg.user {
+  background: var(--accent);
+  color: #fff;
+  margin-left: auto;
+}
+
+.msg.assistant {
+  background: #f1f3f4;
+}
+
+.msg.error-msg {
+  background: #fdecea;
+  color: #c62828;
+}
+
+.run-meta {
+  font-size: 11px;
+  color: #aaa;
+}
+
+.composer {
+  display: flex;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 12px;
+}
+
+.composer textarea {
+  flex: 1;
+  resize: none;
+  height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+}
+
+.composer button {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 18px;
+}
+
+.revisions {
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.rev-run-head {
+  font-weight: 600;
+  margin: 12px 0 6px;
+}
+
+.rev {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.rev summary {
+  cursor: pointer;
+}
+
+.journal {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.journal .outcome-failed {
+  color: #c62828;
+}
