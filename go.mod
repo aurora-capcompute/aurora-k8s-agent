@@ -11,6 +11,7 @@ require (
 	aurora-stores v0.0.0
 	capcompute v0.0.0
 	github.com/extism/go-pdk v1.1.3
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/mattn/go-sqlite3 v1.14.46
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/slack-go/slack v0.26.0

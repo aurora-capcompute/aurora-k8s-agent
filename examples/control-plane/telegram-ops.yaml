@@ -1,0 +1,44 @@
+# Example control-plane resources for the decomposed model, usable by either the
+# k8s controller or the fs control plane (AURORA_CONTROL_PLANE=fs,
+# AURORA_RESOURCES_DIR pointing at this directory).
+#
+# A Brain *exposes an interface* (the capabilities its tree requires); a typed
+# channel carries the transport + its native subjects + its own encrypted tokens;
+# a ChannelBinding *satisfies* the brain's interface with a flat grant and wires
+# it to the channel.
+#
+# Produce the ciphertext below with the same key the agent holds:
+#   printf %s "$TELEGRAM_BOT_TOKEN" | AURORA_SECRET_KEY=… aurora-k8s-agent seal-secret
+apiVersion: aurora.dev/v1alpha1
+kind: Brain
+metadata:
+  name: ops
+spec:
+  artifact: ghcr.io/aurora-capcompute/brain-k8s:latest
+---
+apiVersion: aurora.dev/v1alpha1
+kind: TelegramChannel
+metadata:
+  name: ops-telegram
+spec:
+  botToken:
+    type: inPlaceEncrypted
+    ciphertext: REPLACE_WITH_SEALED_TELEGRAM_BOT_TOKEN
+  users: ["42"]      # Telegram numeric user ids allowed
+  scopes: ["-1001"]  # Telegram chat ids allowed
+---
+apiVersion: aurora.dev/v1alpha1
+kind: ChannelBinding
+metadata:
+  name: ops-on-telegram
+spec:
+  brainRef: ops
+  channelRef:
+    kind: TelegramChannel
+    name: ops-telegram
+  systemPrompt: "You are the cluster operations assistant."
+  allowed:
+    - name: k8s.read
+      settings:
+        namespaces: ["team-a"]
+    - name: llm.chat

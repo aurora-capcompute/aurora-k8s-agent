@@ -87,6 +87,12 @@ spec:
               value: /var/run/aurora-secrets/task-secret
             - name: AURORA_STATE_KEY_FILE
               value: /var/run/aurora-secrets/state-key
+            {{- if .Values.controller.enabled }}
+            # Key that decrypts channel "inPlaceEncrypted" secrets (and that
+            # `aurora-k8s-agent seal-secret` uses to produce them).
+            - name: AURORA_SECRET_KEY_FILE
+              value: /var/run/aurora-secrets/secret-key
+            {{- end }}
             - name: {{ .Values.llmEnvVar }}
               valueFrom:
                 secretKeyRef:

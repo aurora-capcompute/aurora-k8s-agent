@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -23,11 +24,80 @@ const ABIVersion = 1
 // does not implement.
 var ErrIncompatibleABI = errors.New("incompatible brain ABI")
 
-// Manifest is the brain's self-description, carried as the OCI config blob.
+// Manifest is the brain's self-description, carried as the OCI config blob. It
+// describes the whole delegation tree shipped in the artifact: the root's
+// capabilities plus, optionally, declared children (recursive). A brain with no
+// children is simply a single-node tree.
 type Manifest struct {
 	ID           string       `json:"id"`
 	ABI          int          `json:"abi"`
 	Capabilities []Capability `json:"capabilities"`
+	Children     []Child      `json:"children,omitempty"`
+}
+
+// Child is a declared delegation node within the brain tree: another brain (by
+// id) reachable from its parent via call.<name>, with its own declared
+// capabilities and further children. The whole tree ships in the artifact; the
+// manifest declares the capability interface for all of it.
+type Child struct {
+	Name         string       `json:"name"`
+	Brain        string       `json:"brain"`
+	SystemPrompt string       `json:"systemPrompt,omitempty"`
+	Capabilities []Capability `json:"capabilities,omitempty"`
+	Children     []Child      `json:"children,omitempty"`
+	// OnFailure mirrors the runtime ChildManifest policy ("report"|"propagate").
+	OnFailure string `json:"onFailure,omitempty"`
+}
+
+// RequiredUnion returns the sorted set of non-optional capability names across the
+// whole tree (root + all descendants) — the floor a binding must satisfy.
+func (m Manifest) RequiredUnion() []string {
+	set := make(map[string]struct{})
+	collectRequired(m.Capabilities, set)
+	var walk func([]Child)
+	walk = func(children []Child) {
+		for _, ch := range children {
+			collectRequired(ch.Capabilities, set)
+			walk(ch.Children)
+		}
+	}
+	walk(m.Children)
+	out := make([]string, 0, len(set))
+	for name := range set {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// DeclaredNames returns the set of every capability name declared anywhere in the
+// tree, so a grant can be checked for naming capabilities the brain never uses.
+func (m Manifest) DeclaredNames() map[string]struct{} {
+	set := make(map[string]struct{})
+	collectNames(m.Capabilities, set)
+	var walk func([]Child)
+	walk = func(children []Child) {
+		for _, ch := range children {
+			collectNames(ch.Capabilities, set)
+			walk(ch.Children)
+		}
+	}
+	walk(m.Children)
+	return set
+}
+
+func collectRequired(caps []Capability, set map[string]struct{}) {
+	for _, c := range caps {
+		if !c.Optional {
+			set[c.Name] = struct{}{}
+		}
+	}
+}
+
+func collectNames(caps []Capability, set map[string]struct{}) {
+	for _, c := range caps {
+		set[c.Name] = struct{}{}
+	}
 }
 
 // CheckABI gates a brain manifest against the ABI this host implements. A brain
