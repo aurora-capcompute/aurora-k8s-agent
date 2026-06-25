@@ -1,9 +1,9 @@
 [submodule "third_party/capcompute"]
 	path = third_party/capcompute
-	url = https://github.com/Gr0Bert/capcompute.git
+	url = https://github.com/aurora-capcompute/capcompute.git
 [submodule "third_party/aurora-capcompute"]
 	path = third_party/aurora-capcompute
-	url = https://github.com/Gr0Bert/aurora.git
+	url = https://github.com/aurora-capcompute/aurora.git
 [submodule "third_party/aurora-dispatchers"]
 	path = third_party/aurora-dispatchers
 	url = https://github.com/aurora-capcompute/aurora-dispatchers.git
@@ -18,4 +18,4 @@
 	url = https://github.com/aurora-capcompute/aurora-dispatchers-llm.git
 [submodule "third_party/aurora-stores"]
 	path = third_party/aurora-stores
-	url = https://github.com/Gr0Bert/aurora-stores.git
+	url = https://github.com/aurora-capcompute/aurora-stores.git
