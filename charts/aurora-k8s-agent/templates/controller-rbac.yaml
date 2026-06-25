@@ -7,10 +7,10 @@ metadata:
     {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["aurora.dev"]
-    resources: ["brains", "functioninstances", "channels"]
+    resources: ["brains", "slackchannels", "telegramchannels", "webchannels", "channelbindings"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["aurora.dev"]
-    resources: ["brains/status", "functioninstances/status", "channels/status"]
+    resources: ["brains/status", "slackchannels/status", "telegramchannels/status", "webchannels/status", "channelbindings/status"]
     verbs: ["get", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

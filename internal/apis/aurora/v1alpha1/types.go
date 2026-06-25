@@ -1,7 +1,14 @@
-// Package v1alpha1 defines the Aurora control-plane API: Brain (an OCI brain
-// artifact), FunctionInstance (a brain bound to a granted capability subset and a
-// channel — the "manifest" as a deployable instance), and Channel (a transport +
-// its credentials). The controller watches these and configures the agent.
+// Package v1alpha1 defines the Aurora control-plane API. The model is decomposed
+// into three roles:
+//
+//   - Brain: an OCI brain artifact that *exposes an interface* — the capabilities
+//     its whole delegation tree (root + children, declared in the artifact)
+//     requires.
+//   - typed Channel CRDs (SlackChannel/TelegramChannel/WebChannel): a transport
+//     plus its channel-native user/subject abstraction and its own credentials,
+//     each credential carried as a SecretSource (a tagged union).
+//   - ChannelBinding: *satisfies* a brain's interface with a single flat combined
+//     grant and *wires* the brain to a channel; validation happens here.
 //
 // These are plain spec/status structs decoded from unstructured objects via the
 // dynamic client; they are not registered runtime.Objects, so no deepcopy/scheme
@@ -16,12 +23,20 @@ const (
 	// Version is the API version.
 	Version = "v1alpha1"
 
-	KindBrain            = "Brain"
-	KindFunctionInstance = "FunctionInstance"
-	KindChannel          = "Channel"
+	KindBrain           = "Brain"
+	KindSlackChannel    = "SlackChannel"
+	KindTelegramChannel = "TelegramChannel"
+	KindWebChannel      = "WebChannel"
+	KindChannelBinding  = "ChannelBinding"
 )
 
-// BrainSpec references a brain OCI artifact.
+// ChannelKinds lists the typed channel kinds, in a stable order.
+var ChannelKinds = []string{KindSlackChannel, KindTelegramChannel, KindWebChannel}
+
+// --- Brain ---
+
+// BrainSpec references a brain OCI artifact. The artifact's manifest declares the
+// capability interface of the whole tree (root + children).
 type BrainSpec struct {
 	// Artifact is the OCI reference (e.g. ghcr.io/org/brain-k8s:1.4).
 	Artifact string `json:"artifact"`
@@ -38,54 +53,93 @@ type BrainStatus struct {
 	Message      string   `json:"message,omitempty"`
 }
 
+// --- secrets ---
+
+// SecretSource is a tagged union describing where a credential comes from. Only
+// the field selected by Type is populated.
+//
+//   - "inPlaceEncrypted": Ciphertext holds base64(nonce‖AES-GCM ciphertext),
+//     decrypted in place with the agent's secret key. Implemented.
+//   - "secretStorage": Ref points at an external secret (k8s Secret or fs).
+//     Declared for forward-compatibility; not yet resolvable.
+type SecretSource struct {
+	Type       string        `json:"type"`
+	Ciphertext string        `json:"ciphertext,omitempty"`
+	Ref        *SecretKeyRef `json:"ref,omitempty"`
+}
+
+// Secret source variants.
+const (
+	SecretInPlaceEncrypted = "inPlaceEncrypted"
+	SecretStorage          = "secretStorage"
+)
+
+// SecretKeyRef names a key within an external secret (the secretStorage variant).
+type SecretKeyRef struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+}
+
+// --- typed channels ---
+
+// SlackChannelSpec is a Slack transport: its tokens plus the Slack-native
+// subjects (user U… ids and channel C… ids) allowed on it.
+type SlackChannelSpec struct {
+	AppToken SecretSource `json:"appToken"`
+	BotToken SecretSource `json:"botToken"`
+	Users    []string     `json:"users"`
+	Scopes   []string     `json:"scopes"`
+}
+
+// TelegramChannelSpec is a Telegram transport: its bot token plus Telegram-native
+// subjects (numeric user ids and chat ids) allowed on it.
+type TelegramChannelSpec struct {
+	BotToken SecretSource `json:"botToken"`
+	Users    []string     `json:"users"`
+	Scopes   []string     `json:"scopes"`
+}
+
+// WebChannelSpec is the HTTP-driven web channel: no transport secret. Users and
+// scopes are optional (the web channel is driven over the API).
+type WebChannelSpec struct {
+	Users  []string `json:"users,omitempty"`
+	Scopes []string `json:"scopes,omitempty"`
+}
+
+// ChannelStatus reports validation state for any channel kind.
+type ChannelStatus struct {
+	Ready   bool   `json:"ready"`
+	Message string `json:"message,omitempty"`
+}
+
+// --- ChannelBinding ---
+
 // Capability is a capability grant: a name plus optional scoped settings.
 type Capability struct {
 	Name     string          `json:"name"`
 	Settings json.RawMessage `json:"settings,omitempty"`
 }
 
-// Subjects identifies who may drive this instance on its channel.
-type Subjects struct {
-	// Users are source-specific subject IDs (Telegram numeric IDs, Slack U…).
-	Users []string `json:"users"`
-	// Scopes are source-specific scope IDs (Telegram chat IDs, Slack channel IDs).
-	Scopes []string `json:"scopes"`
+// ChannelRef names a typed channel: its kind (SlackChannel/TelegramChannel/
+// WebChannel) and resource name.
+type ChannelRef struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
 }
 
-// Child is a delegation child: another brain reachable via call.<name>.
-type Child struct {
-	Name         string       `json:"name"`
+// ChannelBindingSpec satisfies a brain's interface and wires it to a channel.
+// Allowed is the single flat combined grant for the whole brain tree: every
+// capability the tree requires must be present, scoped no wider than the brain
+// declares.
+type ChannelBindingSpec struct {
 	BrainRef     string       `json:"brainRef"`
+	ChannelRef   ChannelRef   `json:"channelRef"`
 	SystemPrompt string       `json:"systemPrompt,omitempty"`
-	Capabilities []Capability `json:"capabilities,omitempty"`
+	Allowed      []Capability `json:"allowed"`
 }
 
-// FunctionInstanceSpec binds a brain to a granted capability subset and a channel.
-type FunctionInstanceSpec struct {
-	BrainRef     string       `json:"brainRef"`
-	SystemPrompt string       `json:"systemPrompt,omitempty"`
-	Capabilities []Capability `json:"capabilities"`
-	ChannelRef   string       `json:"channelRef"`
-	Subjects     Subjects     `json:"subjects"`
-	Children     []Child      `json:"children,omitempty"`
-}
-
-// FunctionInstanceStatus reports validation state.
-type FunctionInstanceStatus struct {
-	Ready   bool   `json:"ready"`
-	Message string `json:"message,omitempty"`
-}
-
-// ChannelSpec is a transport and its credentials.
-type ChannelSpec struct {
-	// Source is the transport kind: "telegram" or "slack".
-	Source string `json:"source"`
-	// SecretRef names the Secret holding the transport tokens.
-	SecretRef string `json:"secretRef"`
-}
-
-// ChannelStatus reports validation state.
-type ChannelStatus struct {
+// ChannelBindingStatus reports validation state.
+type ChannelBindingStatus struct {
 	Ready   bool   `json:"ready"`
 	Message string `json:"message,omitempty"`
 }

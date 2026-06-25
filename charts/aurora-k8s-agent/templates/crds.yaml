@@ -44,35 +44,68 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: channels.aurora.dev
+  name: slackchannels.aurora.dev
   labels:
     {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
 spec:
   group: aurora.dev
   scope: Namespaced
   names:
-    kind: Channel
-    plural: channels
-    singular: channel
+    kind: SlackChannel
+    plural: slackchannels
+    singular: slackchannel
   versions:
     - name: v1alpha1
       served: true
       storage: true
       subresources:
         status: {}
+      additionalPrinterColumns:
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
       schema:
         openAPIV3Schema:
           type: object
           properties:
             spec:
               type: object
-              required: [source, secretRef]
+              required: [appToken, botToken, users, scopes]
               properties:
-                source:
-                  type: string
-                  enum: [telegram, slack]
-                secretRef:
-                  type: string
+                appToken:
+                  type: object
+                  required: [type]
+                  properties:
+                    type:
+                      type: string
+                      enum: [inPlaceEncrypted, secretStorage]
+                    ciphertext:
+                      type: string
+                    ref:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        key: { type: string }
+                botToken:
+                  type: object
+                  required: [type]
+                  properties:
+                    type:
+                      type: string
+                      enum: [inPlaceEncrypted, secretStorage]
+                    ciphertext:
+                      type: string
+                    ref:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        key: { type: string }
+                users:
+                  type: array
+                  items: { type: string }
+                scopes:
+                  type: array
+                  items: { type: string }
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true
@@ -80,16 +113,111 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: functioninstances.aurora.dev
+  name: telegramchannels.aurora.dev
   labels:
     {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
 spec:
   group: aurora.dev
   scope: Namespaced
   names:
-    kind: FunctionInstance
-    plural: functioninstances
-    singular: functioninstance
+    kind: TelegramChannel
+    plural: telegramchannels
+    singular: telegramchannel
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [botToken, users, scopes]
+              properties:
+                botToken:
+                  type: object
+                  required: [type]
+                  properties:
+                    type:
+                      type: string
+                      enum: [inPlaceEncrypted, secretStorage]
+                    ciphertext:
+                      type: string
+                    ref:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        key: { type: string }
+                users:
+                  type: array
+                  items: { type: string }
+                scopes:
+                  type: array
+                  items: { type: string }
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: webchannels.aurora.dev
+  labels:
+    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
+spec:
+  group: aurora.dev
+  scope: Namespaced
+  names:
+    kind: WebChannel
+    plural: webchannels
+    singular: webchannel
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                users:
+                  type: array
+                  items: { type: string }
+                scopes:
+                  type: array
+                  items: { type: string }
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: channelbindings.aurora.dev
+  labels:
+    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
+spec:
+  group: aurora.dev
+  scope: Namespaced
+  names:
+    kind: ChannelBinding
+    plural: channelbindings
+    singular: channelbinding
   versions:
     - name: v1alpha1
       served: true
@@ -102,7 +230,7 @@ spec:
           jsonPath: .spec.brainRef
         - name: Channel
           type: string
-          jsonPath: .spec.channelRef
+          jsonPath: .spec.channelRef.name
         - name: Ready
           type: boolean
           jsonPath: .status.ready
@@ -112,15 +240,22 @@ spec:
           properties:
             spec:
               type: object
-              required: [brainRef, channelRef, capabilities, subjects]
+              required: [brainRef, channelRef, allowed]
               properties:
                 brainRef:
                   type: string
                 channelRef:
-                  type: string
+                  type: object
+                  required: [kind, name]
+                  properties:
+                    kind:
+                      type: string
+                      enum: [SlackChannel, TelegramChannel, WebChannel]
+                    name:
+                      type: string
                 systemPrompt:
                   type: string
-                capabilities:
+                allowed:
                   type: array
                   items:
                     type: object
@@ -131,23 +266,6 @@ spec:
                       settings:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
-                subjects:
-                  type: object
-                  required: [users, scopes]
-                  properties:
-                    users:
-                      type: array
-                      items:
-                        type: string
-                    scopes:
-                      type: array
-                      items:
-                        type: string
-                children:
-                  type: array
-                  items:
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

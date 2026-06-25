@@ -23,10 +23,19 @@ import (
 
 // GroupVersionResources for the control-plane kinds.
 var (
-	brainGVR    = schema.GroupVersionResource{Group: v1alpha1.Group, Version: v1alpha1.Version, Resource: "brains"}
-	instanceGVR = schema.GroupVersionResource{Group: v1alpha1.Group, Version: v1alpha1.Version, Resource: "functioninstances"}
-	channelGVR  = schema.GroupVersionResource{Group: v1alpha1.Group, Version: v1alpha1.Version, Resource: "channels"}
+	brainGVR    = gvr("brains")
+	slackGVR    = gvr("slackchannels")
+	telegramGVR = gvr("telegramchannels")
+	webGVR      = gvr("webchannels")
+	bindingGVR  = gvr("channelbindings")
+
+	// controlPlaneGVRs is the watch set, in a stable order.
+	controlPlaneGVRs = []schema.GroupVersionResource{brainGVR, slackGVR, telegramGVR, webGVR, bindingGVR}
 )
+
+func gvr(resource string) schema.GroupVersionResource {
+	return schema.GroupVersionResource{Group: v1alpha1.Group, Version: v1alpha1.Version, Resource: resource}
+}
 
 // Controller watches the Aurora control-plane resources and reconciles them into
 // runtime configuration via Reconcile, writing status back to each resource and
@@ -78,12 +87,12 @@ func (c *Controller) Start(ctx context.Context) error {
 		UpdateFunc: func(any, any) { c.enqueue() },
 		DeleteFunc: func(any) { c.enqueue() },
 	}
-	for _, gvr := range []schema.GroupVersionResource{brainGVR, instanceGVR, channelGVR} {
-		informer := factory.ForResource(gvr)
+	for _, res := range controlPlaneGVRs {
+		informer := factory.ForResource(res)
 		if _, err := informer.Informer().AddEventHandler(handler); err != nil {
-			return fmt.Errorf("add handler for %s: %w", gvr.Resource, err)
+			return fmt.Errorf("add handler for %s: %w", res.Resource, err)
 		}
-		c.listers[gvr] = informer.Lister()
+		c.listers[res] = informer.Lister()
 	}
 
 	factory.Start(ctx.Done())
@@ -112,33 +121,42 @@ func (c *Controller) enqueue() {
 }
 
 func (c *Controller) reconcileOnce(ctx context.Context) {
-	var in Inputs
 	brainObjs := c.list(brainGVR)
+	slackObjs := c.list(slackGVR)
+	telegramObjs := c.list(telegramGVR)
+	webObjs := c.list(webGVR)
+	bindingObjs := c.list(bindingGVR)
+
+	var in Inputs
 	for _, u := range brainObjs {
 		var spec v1alpha1.BrainSpec
-		if err := decodeSpec(u, &spec); err != nil {
-			c.logger.Warn("decode Brain spec", "name", u.GetName(), "error", err)
-			continue
+		if c.decode(u, v1alpha1.KindBrain, &spec) {
+			in.Brains = append(in.Brains, NamedBrain{Name: u.GetName(), Spec: spec})
 		}
-		in.Brains = append(in.Brains, NamedBrain{Name: u.GetName(), Spec: spec})
 	}
-	channelObjs := c.list(channelGVR)
-	for _, u := range channelObjs {
-		var spec v1alpha1.ChannelSpec
-		if err := decodeSpec(u, &spec); err != nil {
-			c.logger.Warn("decode Channel spec", "name", u.GetName(), "error", err)
-			continue
+	for _, u := range slackObjs {
+		var spec v1alpha1.SlackChannelSpec
+		if c.decode(u, v1alpha1.KindSlackChannel, &spec) {
+			in.SlackChannels = append(in.SlackChannels, NamedSlackChannel{Name: u.GetName(), Spec: spec})
 		}
-		in.Channels = append(in.Channels, NamedChannel{Name: u.GetName(), Spec: spec})
 	}
-	instanceObjs := c.list(instanceGVR)
-	for _, u := range instanceObjs {
-		var spec v1alpha1.FunctionInstanceSpec
-		if err := decodeSpec(u, &spec); err != nil {
-			c.logger.Warn("decode FunctionInstance spec", "name", u.GetName(), "error", err)
-			continue
+	for _, u := range telegramObjs {
+		var spec v1alpha1.TelegramChannelSpec
+		if c.decode(u, v1alpha1.KindTelegramChannel, &spec) {
+			in.TelegramChannels = append(in.TelegramChannels, NamedTelegramChannel{Name: u.GetName(), Spec: spec})
 		}
-		in.Instances = append(in.Instances, NamedInstance{Name: u.GetName(), Spec: spec})
+	}
+	for _, u := range webObjs {
+		var spec v1alpha1.WebChannelSpec
+		if c.decode(u, v1alpha1.KindWebChannel, &spec) {
+			in.WebChannels = append(in.WebChannels, NamedWebChannel{Name: u.GetName(), Spec: spec})
+		}
+	}
+	for _, u := range bindingObjs {
+		var spec v1alpha1.ChannelBindingSpec
+		if c.decode(u, v1alpha1.KindChannelBinding, &spec) {
+			in.Bindings = append(in.Bindings, NamedBinding{Name: u.GetName(), Spec: spec})
+		}
 	}
 
 	res := Reconcile(ctx, in, c.puller, c.provider)
@@ -146,19 +164,35 @@ func (c *Controller) reconcileOnce(ctx context.Context) {
 	for _, u := range brainObjs {
 		c.writeStatus(ctx, brainGVR, u, res.BrainStatus[u.GetName()])
 	}
-	for _, u := range channelObjs {
-		c.writeStatus(ctx, channelGVR, u, res.ChannelStatus[u.GetName()])
+	for _, u := range slackObjs {
+		c.writeStatus(ctx, slackGVR, u, res.ChannelStatus[ChannelKey(v1alpha1.KindSlackChannel, u.GetName())])
 	}
-	for _, u := range instanceObjs {
-		c.writeStatus(ctx, instanceGVR, u, res.InstanceStatus[u.GetName()])
+	for _, u := range telegramObjs {
+		c.writeStatus(ctx, telegramGVR, u, res.ChannelStatus[ChannelKey(v1alpha1.KindTelegramChannel, u.GetName())])
+	}
+	for _, u := range webObjs {
+		c.writeStatus(ctx, webGVR, u, res.ChannelStatus[ChannelKey(v1alpha1.KindWebChannel, u.GetName())])
+	}
+	for _, u := range bindingObjs {
+		c.writeStatus(ctx, bindingGVR, u, res.BindingStatus[u.GetName()])
 	}
 
 	c.logger.Info("controller reconciled",
-		"brains", len(in.Brains), "channels", len(in.Channels),
-		"instances", len(in.Instances), "bindings", len(res.Bindings))
+		"brains", len(in.Brains),
+		"channels", len(in.SlackChannels)+len(in.TelegramChannels)+len(in.WebChannels),
+		"bindings", len(res.Bindings))
 	if c.onResolved != nil {
 		c.onResolved(res)
 	}
+}
+
+// decode decodes an object's spec, logging and skipping on error.
+func (c *Controller) decode(u *unstructured.Unstructured, kind string, out any) bool {
+	if err := decodeSpec(u, out); err != nil {
+		c.logger.Warn("decode "+kind+" spec", "name", u.GetName(), "error", err)
+		return false
+	}
+	return true
 }
 
 func (c *Controller) list(gvr schema.GroupVersionResource) []*unstructured.Unstructured {

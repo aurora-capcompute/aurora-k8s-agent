@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -28,6 +30,7 @@ import (
 	"aurora-k8s-agent/internal/controller"
 	"aurora-k8s-agent/internal/oci"
 	"aurora-k8s-agent/internal/policy"
+	"aurora-k8s-agent/internal/secretbox"
 	slackclient "aurora-k8s-agent/internal/slack"
 	"aurora-k8s-agent/internal/slackbot"
 	"aurora-k8s-agent/internal/slackpolicy"
@@ -47,10 +50,40 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "seal-secret" {
+		if err := sealSecret(); err != nil {
+			fmt.Fprintln(os.Stderr, "seal-secret:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("aurora-k8s-agent stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+// sealSecret reads a plaintext credential from stdin and prints the base64
+// nonce‖AES-GCM ciphertext for an inPlaceEncrypted channel secret, using the same
+// key (AURORA_SECRET_KEY) the agent decrypts with. Usage:
+//
+//	printf %s "$TOKEN" | aurora-k8s-agent seal-secret
+func sealSecret() error {
+	keyValue, err := requiredSecret("AURORA_SECRET_KEY", "AURORA_SECRET_KEY_FILE")
+	if err != nil {
+		return err
+	}
+	plain, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return err
+	}
+	plain = bytes.TrimRight(plain, "\r\n")
+	out, err := secretbox.SealBase64(secretbox.DeriveKey(keyValue), plain)
+	if err != nil {
+		return err
+	}
+	fmt.Println(out)
+	return nil
 }
 
 func run() error {
@@ -295,8 +328,9 @@ func ociOptionsFromEnv() []oci.Option {
 }
 
 // buildController constructs the in-cluster control-plane controller. It watches
-// Brain/FunctionInstance/Channel resources and reconciles them, writing status
-// back. Enabled with AURORA_CONTROLLER=true; AURORA_CONTROLLER_NAMESPACE scopes
+// Brain, the typed channels (SlackChannel/TelegramChannel/WebChannel), and
+// ChannelBinding resources and reconciles them, writing status back. Enabled with
+// AURORA_CONTROLLER=true; AURORA_CONTROLLER_NAMESPACE scopes
 // the watch (empty = all namespaces).
 func buildController(provider aurora.DispatcherProvider, webChannel *webchannel.Channel, logger *slog.Logger) (source.Source, error) {
 	cfg, err := rest.InClusterConfig()
