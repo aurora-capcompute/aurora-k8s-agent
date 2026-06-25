@@ -99,3 +99,42 @@ export interface AgentEvent {
   type: string;
   data: unknown;
 }
+
+export type TaskState =
+  | "pending"
+  | "approved"
+  | "denied"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "expired"
+  | "executed";
+
+export type Decision =
+  | "approved"
+  | "denied"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface Resolution {
+  decision: Decision;
+  data?: unknown;
+  actor?: string;
+  reason?: string;
+}
+
+export interface TaskSnapshot {
+  id: string;
+  run_id: string;
+  revision: number;
+  journal_position: number;
+  call: JournalCall;
+  summary: string;
+  state: TaskState;
+  resolution?: Resolution;
+  created_at: string;
+  expires_at?: string;
+  resolved_at?: string;
+  webhook_token: string;
+}

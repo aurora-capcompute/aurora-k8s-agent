@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, subscribe } from "../api";
-import type { RunGraphNode, ThreadGraph } from "../types";
+import type { RunGraphNode, RunStatus, ThreadGraph } from "../types";
 import { CallGraph } from "./CallGraph";
+import { RunPanel } from "./RunPanel";
 
 type Tab = "chat" | "graph" | "revisions";
+
+function StatusBadge({ status }: { status: RunStatus }) {
+  return <span className={`badge badge-${status}`}>{status}</span>;
+}
 
 export function ThreadView({ threadID }: { threadID: string }) {
   const [graph, setGraph] = useState<ThreadGraph | null>(null);
   const [runGraph, setRunGraph] = useState<RunGraphNode | null>(null);
+  const [selectedRun, setSelectedRun] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("chat");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -29,6 +35,7 @@ export function ThreadView({ threadID }: { threadID: string }) {
   useEffect(() => {
     setGraph(null);
     setRunGraph(null);
+    setSelectedRun(null);
     void reload();
     const unsubscribe = subscribe(threadID, () => void reload());
     return unsubscribe;
@@ -51,6 +58,11 @@ export function ThreadView({ threadID }: { threadID: string }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const inspect = (runID: string) => {
+    setSelectedRun(runID);
+    setTab("graph");
   };
 
   return (
@@ -79,7 +91,11 @@ export function ThreadView({ threadID }: { threadID: string }) {
                 {run.answer && <div className="msg assistant">{run.answer}</div>}
                 {run.error && <div className="msg error-msg">⚠ {run.error}</div>}
                 <div className="run-meta">
-                  {run.run_id} · {run.status} · rev {run.current_revision}
+                  <button className="link" onClick={() => inspect(run.run_id)}>
+                    {run.run_id}
+                  </button>{" "}
+                  <StatusBadge status={run.status} /> · rev{" "}
+                  {run.current_revision}
                 </div>
               </div>
             ))}
@@ -106,7 +122,20 @@ export function ThreadView({ threadID }: { threadID: string }) {
 
       {tab === "graph" &&
         (runGraph ? (
-          <CallGraph root={runGraph} />
+          <div className="graph-split">
+            <div className="graph-canvas">
+              <CallGraph
+                root={runGraph}
+                selected={selectedRun}
+                onSelect={setSelectedRun}
+              />
+            </div>
+            {selectedRun && (
+              <div className="graph-side">
+                <RunPanel runID={selectedRun} onChanged={() => void reload()} />
+              </div>
+            )}
+          </div>
         ) : (
           <div className="empty">No runs yet.</div>
         ))}
@@ -116,7 +145,10 @@ export function ThreadView({ threadID }: { threadID: string }) {
           {graph?.runs.map((run) => (
             <div key={run.run_id} className="rev-run">
               <div className="rev-run-head">
-                {run.run_id} — {run.message}
+                <button className="link" onClick={() => inspect(run.run_id)}>
+                  {run.run_id}
+                </button>{" "}
+                <StatusBadge status={run.status} /> — {run.message}
               </div>
               {run.revisions.map((rev) => (
                 <details key={rev.revision} className="rev">
@@ -129,9 +161,33 @@ export function ThreadView({ threadID }: { threadID: string }) {
                   </summary>
                   <ol className="journal">
                     {rev.entries.map((entry) => (
-                      <li key={entry.index} className={`outcome-${entry.outcome.status}`}>
-                        <code>{entry.call.name}</code> → {entry.outcome.status}
-                        {entry.outcome.message ? ` (${entry.outcome.message})` : ""}
+                      <li
+                        key={entry.index}
+                        className={`outcome-${entry.outcome.status}`}
+                      >
+                        <details>
+                          <summary>
+                            <span
+                              className={`badge badge-${entry.outcome.status}`}
+                            >
+                              {entry.outcome.status}
+                            </span>
+                            <code>{entry.call.name}</code>
+                            {entry.outcome.message
+                              ? ` — ${entry.outcome.message}`
+                              : ""}
+                          </summary>
+                          {entry.call.args !== undefined && (
+                            <pre className="json">
+                              {JSON.stringify(entry.call.args, null, 2)}
+                            </pre>
+                          )}
+                          {entry.outcome.result !== undefined && (
+                            <pre className="json result">
+                              {JSON.stringify(entry.outcome.result, null, 2)}
+                            </pre>
+                          )}
+                        </details>
                       </li>
                     ))}
                   </ol>

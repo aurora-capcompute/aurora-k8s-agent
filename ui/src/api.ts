@@ -1,7 +1,10 @@
 import type {
+  JournalEntry,
   ManifestInfo,
+  Resolution,
   RunGraphNode,
   RunSnapshot,
+  TaskSnapshot,
   ThreadGraph,
   ThreadSummary,
 } from "./types";
@@ -40,6 +43,10 @@ export const api = {
   retryRun: (runID: string, mode: "resume" | "restart") =>
     post<RunSnapshot>(`/api/runs/${runID}/retry`, { mode }),
   stopRun: (runID: string) => post<RunSnapshot>(`/api/runs/${runID}/stop`),
+  journal: (runID: string) => get<JournalEntry[]>(`/api/runs/${runID}/journal`),
+  tasks: (runID: string) => get<TaskSnapshot[]>(`/api/runs/${runID}/tasks`),
+  resolveTask: (taskID: string, token: string, resolution: Resolution) =>
+    post<TaskSnapshot>(`/api/tasks/${taskID}/resolve`, { token, resolution }),
 };
 
 // subscribe opens the SSE event stream for a thread; returns an unsubscribe fn.
