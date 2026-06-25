@@ -35,6 +35,7 @@ import (
 	"aurora-k8s-agent/internal/source"
 	"aurora-k8s-agent/internal/state"
 	"aurora-k8s-agent/internal/telegram"
+	"aurora-k8s-agent/internal/webapi"
 	"aurora-stores/memory"
 	aurorasqlite "aurora-stores/sqlite"
 
@@ -407,9 +408,10 @@ func startHealthServer(
 	return startServer(ctx, "health", address, mux, logger)
 }
 
-// startAPIServer serves the read-only execution-graph API on its own port,
-// separate from the health/probe port so it can be exposed (via a Service) on its
-// own. Disabled when address is empty.
+// startAPIServer serves the agent HTTP API (read-only execution-graph
+// projections, interactive control, and the live event stream) on its own port,
+// separate from the health/probe port so it can be exposed via a Service.
+// Disabled when address is empty.
 func startAPIServer(
 	ctx context.Context,
 	address string,
@@ -419,9 +421,7 @@ func startAPIServer(
 	if strings.TrimSpace(address) == "" {
 		return nil
 	}
-	mux := http.NewServeMux()
-	registerGraphAPI(mux, runtime)
-	return startServer(ctx, "api", address, mux, logger)
+	return startServer(ctx, "api", address, webapi.Handler(runtime), logger)
 }
 
 func startServer(ctx context.Context, name, address string, handler http.Handler, logger *slog.Logger) *http.Server {
@@ -438,42 +438,6 @@ func startServer(ctx context.Context, name, address string, handler http.Handler
 		_ = server.Shutdown(shutdownCtx)
 	}()
 	return server
-}
-
-// registerGraphAPI mounts read-only JSON endpoints for exploring a thread's
-// execution graph: its threads, the per-thread run/revision graph, and the
-// delegation call graph of a run. These back a UI for roaming the run history.
-func registerGraphAPI(mux *http.ServeMux, runtime aurora.Runtime) {
-	mux.HandleFunc("GET /api/threads", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, runtime.ListThreads(), nil)
-	})
-	mux.HandleFunc("GET /api/threads/{id}/graph", func(w http.ResponseWriter, r *http.Request) {
-		graph, err := runtime.ThreadGraph(r.PathValue("id"))
-		writeJSON(w, graph, err)
-	})
-	mux.HandleFunc("GET /api/runs/{id}/graph", func(w http.ResponseWriter, r *http.Request) {
-		graph, err := runtime.CallGraph(r.PathValue("id"))
-		writeJSON(w, graph, err)
-	})
-	mux.HandleFunc("GET /api/runs/{id}/journal", func(w http.ResponseWriter, r *http.Request) {
-		entries, err := runtime.Journal(r.PathValue("id"))
-		writeJSON(w, entries, err)
-	})
-}
-
-func writeJSON(w http.ResponseWriter, payload any, err error) {
-	if err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, aurora.ErrNotFound) {
-			status = http.StatusNotFound
-		}
-		http.Error(w, err.Error(), status)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if encodeErr := json.NewEncoder(w).Encode(payload); encodeErr != nil {
-		http.Error(w, encodeErr.Error(), http.StatusInternalServerError)
-	}
 }
 
 func requiredSecret(valueEnv, fileEnv string) (string, error) {
