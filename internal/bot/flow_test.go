@@ -77,7 +77,13 @@ func (r *flowRuntime) GetRun(string) (aurora.RunSnapshot, error) {
 	return aurora.RunSnapshot{ID: "run-1", Status: aurora.RunQueued}, nil
 }
 func (r *flowRuntime) Journal(string) ([]aurora.JournalEntry, error) { return nil, nil }
-func (r *flowRuntime) Tasks(string) ([]aurora.TaskSnapshot, error)   { return nil, nil }
+func (r *flowRuntime) CallGraph(string) (aurora.RunGraphNode, error) {
+	return aurora.RunGraphNode{}, nil
+}
+func (r *flowRuntime) ThreadGraph(string) (aurora.ThreadGraph, error) {
+	return aurora.ThreadGraph{}, nil
+}
+func (r *flowRuntime) Tasks(string) ([]aurora.TaskSnapshot, error) { return nil, nil }
 func (r *flowRuntime) ResolveTask(string, string, aurora.Resolution) (aurora.TaskSnapshot, error) {
 	return aurora.TaskSnapshot{}, nil
 }
