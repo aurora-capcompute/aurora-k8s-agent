@@ -229,6 +229,200 @@ button {
   font-size: 13px;
 }
 
-.journal .outcome-failed {
+.journal li {
+  margin-bottom: 4px;
+}
+
+.journal summary {
+  cursor: pointer;
+}
+
+.journal .outcome-failed > details > summary code {
   color: #c62828;
+}
+
+/* status badges */
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 10px;
+  color: #fff;
+  background: #455a64;
+  vertical-align: middle;
+}
+
+.badge-completed {
+  background: #2e7d32;
+}
+.badge-failed {
+  background: #c62828;
+}
+.badge-running {
+  background: #1565c0;
+}
+.badge-queued {
+  background: #6a1b9a;
+}
+.badge-yielded,
+.badge-waiting_task,
+.badge-stopping {
+  background: #ef6c00;
+}
+.badge-stopped,
+.badge-interrupted {
+  background: #455a64;
+}
+
+/* inline link-style button */
+.link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* graph tab: scope toggle + canvas + side panel */
+.graph-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.scope-toggle {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 14px;
+  padding: 3px 12px;
+  font-size: 12px;
+  color: #555;
+}
+
+.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.graph-split {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.graph-canvas {
+  flex: 1;
+  min-width: 0;
+}
+
+.graph-side {
+  width: 380px;
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.run-panel {
+  padding: 12px;
+}
+
+.run-panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  word-break: break-all;
+}
+
+.run-panel-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.run-panel-controls button {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #777;
+  margin: 12px 0 6px;
+}
+
+/* HITL approval tasks */
+.tasks .task {
+  border: 1px solid var(--border);
+  border-left: 3px solid #ef6c00;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.task-summary {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.task-call {
+  font-size: 12px;
+  color: #888;
+}
+
+.task-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.task-actions button {
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  color: #fff;
+}
+
+.task-actions .approve {
+  background: #2e7d32;
+}
+
+.task-actions .deny {
+  background: #c62828;
+}
+
+/* JSON dumps */
+.json {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: 6px;
+  padding: 8px;
+  margin: 6px 0;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.json.result {
+  border-left: 3px solid #2e7d32;
 }
