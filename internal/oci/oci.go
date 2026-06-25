@@ -60,6 +60,9 @@ func pull(ctx context.Context, target oras.ReadOnlyTarget, reference string) (Ar
 	if err != nil {
 		return Artifact{}, err
 	}
+	if err := spec.CheckABI(); err != nil {
+		return Artifact{}, err
+	}
 
 	var wasm []byte
 	for _, layer := range manifest.Layers {

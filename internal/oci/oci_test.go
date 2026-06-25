@@ -3,8 +3,10 @@ package oci
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 
+	"aurora-k8s-agent/internal/brainspec"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content"
@@ -42,7 +44,7 @@ func TestPullRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 	wasm := []byte("\x00asm-brain-bytes")
-	config := []byte(`{"id":"kubernetes-agent","capabilities":[{"name":"k8s.get"},{"name":"k8s.apply","optional":true}]}`)
+	config := []byte(`{"id":"kubernetes-agent","abi":1,"capabilities":[{"name":"k8s.get"},{"name":"k8s.apply","optional":true}]}`)
 	packBrain(ctx, t, store, "brain:test", config, wasm, BrainWasmMediaType)
 
 	art, err := pull(ctx, store, "brain:test")
@@ -66,12 +68,33 @@ func TestPullRoundTrip(t *testing.T) {
 func TestPullRejectsMissingWasmLayer(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
-	config := []byte(`{"id":"x","capabilities":[]}`)
+	config := []byte(`{"id":"x","abi":1,"capabilities":[]}`)
 	// Wrong layer media type → no brain wasm present.
 	packBrain(ctx, t, store, "brain:nowasm", config, []byte("data"), "application/octet-stream")
 
 	if _, err := pull(ctx, store, "brain:nowasm"); err == nil {
 		t.Fatal("expected error when no brain wasm layer is present")
+	}
+}
+
+func TestPullRejectsIncompatibleABI(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+
+	// A brain declaring a different host-call ABI than the host implements must
+	// be refused at load.
+	future := []byte(`{"id":"future","abi":2,"capabilities":[]}`)
+	packBrain(ctx, t, store, "brain:future", future, []byte("\x00asm-future"), BrainWasmMediaType)
+	_, err := pull(ctx, store, "brain:future")
+	if !errors.Is(err, brainspec.ErrIncompatibleABI) {
+		t.Fatalf("future ABI error = %v, want ErrIncompatibleABI", err)
+	}
+
+	// An undeclared ABI (0) is likewise refused — a brain must declare it.
+	undeclared := []byte(`{"id":"legacy","capabilities":[]}`)
+	packBrain(ctx, t, store, "brain:legacy", undeclared, []byte("\x00asm-legacy"), BrainWasmMediaType)
+	if _, err := pull(ctx, store, "brain:legacy"); !errors.Is(err, brainspec.ErrIncompatibleABI) {
+		t.Fatalf("undeclared ABI error = %v, want ErrIncompatibleABI", err)
 	}
 }
 

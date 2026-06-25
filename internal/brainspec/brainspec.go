@@ -13,10 +13,32 @@ import (
 	"strings"
 )
 
+// ABIVersion is the host-call ABI this engine implements: the lifecycle contract
+// by which a brain receives its run input (the agent.input host call) and reports
+// its answer (agent.finish). A brain artifact declares the ABI it was built
+// against so the host can refuse to run a brain it is not compatible with.
+const ABIVersion = 1
+
+// ErrIncompatibleABI reports a brain built against a host-call ABI this engine
+// does not implement.
+var ErrIncompatibleABI = errors.New("incompatible brain ABI")
+
 // Manifest is the brain's self-description, carried as the OCI config blob.
 type Manifest struct {
 	ID           string       `json:"id"`
+	ABI          int          `json:"abi"`
 	Capabilities []Capability `json:"capabilities"`
+}
+
+// CheckABI gates a brain manifest against the ABI this host implements. A brain
+// must declare exactly ABIVersion; any other value (including an undeclared ABI
+// of 0) is refused so an incompatible brain never runs against this lifecycle.
+func (m Manifest) CheckABI() error {
+	if m.ABI != ABIVersion {
+		return fmt.Errorf("%w: brain %q declares ABI %d, host implements %d",
+			ErrIncompatibleABI, m.ID, m.ABI, ABIVersion)
+	}
+	return nil
 }
 
 // Capability is one capability the brain declares. Optional capabilities may be
