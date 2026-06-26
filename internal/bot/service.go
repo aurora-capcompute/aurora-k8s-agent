@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"aurora-capcompute/aurora"
+	chattimers "aurora-k8s-agent/internal/chat/timers"
 	"aurora-k8s-agent/internal/policy"
 	"aurora-k8s-agent/internal/state"
 	"aurora-k8s-agent/internal/telegram"
@@ -22,7 +23,7 @@ type Service struct {
 	policies atomic.Pointer[policy.Set]
 	identity telegram.BotIdentity
 	logger   *slog.Logger
-	timers   *timerScheduler
+	timers   *chattimers.Scheduler
 
 	mu            sync.Mutex
 	subscriptions map[string]func()
@@ -39,7 +40,7 @@ func New(
 	s := &Service{
 		runtime: runtime, client: client, store: store,
 		identity: identity, logger: logger,
-		timers:        newTimerScheduler(runtime, logger),
+		timers:        chattimers.NewScheduler(runtime, logger),
 		subscriptions: make(map[string]func()),
 	}
 	s.policies.Store(policies)
@@ -74,7 +75,7 @@ func (s *Service) Start(ctx context.Context) error {
 
 func (s *Service) Run(ctx context.Context) error {
 	defer s.unsubscribeAll()
-	defer s.timers.stopAll()
+	defer s.timers.StopAll()
 
 	backoff := time.Second
 	for {
@@ -295,7 +296,7 @@ func (s *Service) Recover(ctx context.Context) error {
 				if task.State != aurora.TaskStatePending {
 					continue
 				}
-				if isTimerTask(task) {
+				if chattimers.IsTimerTask(task) {
 					s.scheduleTimer(ctx, conversation, task)
 					continue
 				}

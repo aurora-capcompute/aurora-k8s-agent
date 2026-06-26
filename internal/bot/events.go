@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"aurora-capcompute/aurora"
+	chattimers "aurora-k8s-agent/internal/chat/timers"
 	"aurora-k8s-agent/internal/state"
 	"aurora-k8s-agent/internal/telegram"
 )
@@ -15,14 +16,14 @@ func (s *Service) handleEvent(ctx context.Context, conversation state.Conversati
 		var run aurora.RunSnapshot
 		if decodeEvent(event.Data, &run) == nil {
 			if terminal(run.Status) {
-				s.timers.cancelRun(run.ID)
+				s.timers.CancelRun(run.ID)
 			}
 			s.updateRunMessage(ctx, run)
 		}
 	case "task.created":
 		var task aurora.TaskSnapshot
 		if decodeEvent(event.Data, &task) == nil {
-			if isTimerTask(task) {
+			if chattimers.IsTimerTask(task) {
 				s.scheduleTimer(ctx, conversation, task)
 			} else {
 				s.createTaskMessage(ctx, conversation, task)
@@ -60,7 +61,7 @@ func (s *Service) updateRunMessage(ctx context.Context, run aurora.RunSnapshot) 
 	previousState := message.State
 	text, keyboard := renderRun(run)
 	if run.Status == aurora.RunWaitingTask {
-		if fireAt, ok := s.timers.fireAtFor(run.ID); ok {
+		if fireAt, ok := s.timers.FireAtFor(run.ID); ok {
 			text = renderTimerWaiting(fireAt)
 		}
 	}
@@ -115,7 +116,7 @@ func (s *Service) createTaskMessage(
 // the scheduler resolves the task when it fires. Arming is idempotent, so this is
 // safe to call from both the live event and restart recovery.
 func (s *Service) scheduleTimer(_ context.Context, _ state.Conversation, task aurora.TaskSnapshot) {
-	s.timers.schedule(task)
+	s.timers.Schedule(task)
 }
 
 func (s *Service) updateTaskMessage(ctx context.Context, task aurora.TaskSnapshot) {

@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"aurora-capcompute/aurora"
+	chattimers "aurora-k8s-agent/internal/chat/timers"
 	"aurora-k8s-agent/internal/slack"
 	policy "aurora-k8s-agent/internal/slackpolicy"
 	state "aurora-k8s-agent/internal/slackstate"
@@ -23,7 +24,7 @@ type Service struct {
 	store    *state.Store
 	policies atomic.Pointer[policy.Set]
 	logger   *slog.Logger
-	timers   *timerScheduler
+	timers   *chattimers.Scheduler
 
 	mu            sync.Mutex
 	subscriptions map[string]func()
@@ -38,7 +39,7 @@ func New(
 ) *Service {
 	s := &Service{
 		runtime: runtime, client: client, store: store, logger: logger,
-		timers:        newTimerScheduler(runtime, logger),
+		timers:        chattimers.NewScheduler(runtime, logger),
 		subscriptions: make(map[string]func()),
 	}
 	s.policies.Store(policies)
@@ -70,7 +71,7 @@ func (s *Service) Start(ctx context.Context) error { return s.Run(ctx) }
 // events until ctx is cancelled.
 func (s *Service) Run(ctx context.Context) error {
 	defer s.unsubscribeAll()
-	defer s.timers.stopAll()
+	defer s.timers.StopAll()
 	if _, err := s.client.Identify(ctx); err != nil {
 		return err
 	}
@@ -197,8 +198,8 @@ func (s *Service) Recover(ctx context.Context) error {
 				if task.State != aurora.TaskStatePending {
 					continue
 				}
-				if isTimerTask(task) {
-					s.timers.schedule(task)
+				if chattimers.IsTimerTask(task) {
+					s.timers.Schedule(task)
 					continue
 				}
 				s.createTaskMessage(ctx, conversation, task)
