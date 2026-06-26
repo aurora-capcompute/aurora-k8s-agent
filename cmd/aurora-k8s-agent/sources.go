@@ -1,0 +1,137 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"path/filepath"
+
+	"aurora-capcompute/aurora"
+
+	"aurora-k8s-agent/internal/assembly"
+	"aurora-k8s-agent/internal/bot"
+	"aurora-k8s-agent/internal/controller"
+	"aurora-k8s-agent/internal/oci"
+	"aurora-k8s-agent/internal/policy"
+	slackclient "aurora-k8s-agent/internal/slack"
+	"aurora-k8s-agent/internal/slackbot"
+	"aurora-k8s-agent/internal/slackpolicy"
+	"aurora-k8s-agent/internal/slackstate"
+	"aurora-k8s-agent/internal/source"
+	"aurora-k8s-agent/internal/state"
+	"aurora-k8s-agent/internal/telegram"
+
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
+)
+
+// buildFileControlPlane builds the filesystem control plane reading manifests
+// from cfg.ResourcesDir (re-scanned every cfg.ResourcesResync).
+func buildFileControlPlane(cfg Config, provider aurora.DispatcherProvider, onResolved func(controller.Resolved), logger *slog.Logger) (source.Source, error) {
+	if cfg.ResourcesDir == "" {
+		return nil, errors.New("fs control plane requires AURORA_RESOURCES_DIR")
+	}
+	return controller.NewFileSource(cfg.ResourcesDir, cfg.ResourcesResync,
+		oci.NewRemotePuller(cfg.OCIOptions...), provider, onResolved, logger), nil
+}
+
+// buildBrainProvider selects the brain source loaded at startup. With cfg.BrainRefs
+// set (registry refs or "oci-layout:<dir>:<tag>" for a registry-less on-disk
+// layout) those brains are loaded up front. With it empty the agent boots with no
+// brain (EmptyProvider); brains are then supplied at runtime by Brain CRDs through
+// the control plane, which hot-loads them via runtime.SetBrains.
+func buildBrainProvider(ctx context.Context, cfg Config, logger *slog.Logger) (aurora.BrainProvider, error) {
+	if len(cfg.BrainRefs) == 0 {
+		return assembly.EmptyProvider{}, nil
+	}
+	provider, err := assembly.NewOCIBrainProvider(ctx, cfg.BrainRefs, cfg.BrainDefault, oci.NewRemotePuller(cfg.OCIOptions...))
+	if err != nil {
+		return nil, fmt.Errorf("load brains from OCI: %w", err)
+	}
+	logger.Info("loaded brains from OCI", "count", len(cfg.BrainRefs), "default", provider.DefaultID())
+	return provider, nil
+}
+
+// buildController constructs the in-cluster control-plane controller. It watches
+// Brain, the typed channels (SlackChannel/TelegramChannel/WebChannel), and
+// ChannelBinding resources and reconciles them, writing status back.
+// cfg.ControllerNamespace scopes the watch (empty = all namespaces).
+func buildController(cfg Config, provider aurora.DispatcherProvider, onResolved func(controller.Resolved), logger *slog.Logger) (source.Source, error) {
+	restCfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("controller requires in-cluster config: %w", err)
+	}
+	dyn, err := dynamic.NewForConfig(restCfg)
+	if err != nil {
+		return nil, fmt.Errorf("controller dynamic client: %w", err)
+	}
+	return controller.New(dyn, cfg.ControllerNamespace,
+		oci.NewRemotePuller(cfg.OCIOptions...), provider, onResolved, logger), nil
+}
+
+func buildTelegram(
+	ctx context.Context,
+	cfg Config,
+	runtime aurora.Runtime,
+	provider aurora.DispatcherProvider,
+	stateKey []byte,
+	logger *slog.Logger,
+) (source.Source, func(), error) {
+	token, err := requiredSecret("TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN_FILE")
+	if err != nil {
+		return nil, nil, err
+	}
+	policies, err := policy.Load(cfg.PolicyPath, provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	bridgeStore, err := state.Open(filepath.Join(cfg.DataDir, "telegram.db"), stateKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open Telegram state: %w", err)
+	}
+	client := telegram.NewClient(token)
+	if cfg.TelegramBaseURL != "" {
+		client.SetBaseURL(cfg.TelegramBaseURL)
+	}
+	identity, err := client.GetMe(ctx)
+	if err != nil {
+		bridgeStore.Close()
+		return nil, nil, fmt.Errorf("validate Telegram bot token: %w", err)
+	}
+	service := bot.New(runtime, client, bridgeStore, policies, identity, logger)
+	return service, func() { bridgeStore.Close() }, nil
+}
+
+func buildSlack(
+	_ context.Context,
+	cfg Config,
+	runtime aurora.Runtime,
+	provider aurora.DispatcherProvider,
+	stateKey []byte,
+	logger *slog.Logger,
+) (source.Source, func(), error) {
+	appToken, err := requiredSecret("SLACK_APP_TOKEN", "SLACK_APP_TOKEN_FILE")
+	if err != nil {
+		return nil, nil, err
+	}
+	botToken, err := requiredSecret("SLACK_BOT_TOKEN", "SLACK_BOT_TOKEN_FILE")
+	if err != nil {
+		return nil, nil, err
+	}
+	policies, err := slackpolicy.Load(cfg.PolicyPath, provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	bridgeStore, err := slackstate.Open(filepath.Join(cfg.DataDir, "slack.db"), stateKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open Slack state: %w", err)
+	}
+	client, err := slackclient.NewClient(appToken, botToken)
+	if err != nil {
+		bridgeStore.Close()
+		return nil, nil, err
+	}
+	service := slackbot.New(runtime, client, bridgeStore, policies, logger)
+	return service, func() { bridgeStore.Close() }, nil
+}
