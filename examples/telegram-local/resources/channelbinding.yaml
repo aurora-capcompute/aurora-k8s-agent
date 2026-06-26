@@ -1,0 +1,49 @@
+# The binding satisfies the brain's interface with one flat grant and wires the
+# brain to the channel. `allowed` is the ceiling: every required brain capability
+# (openai.chat) must appear, and the operational tools are scoped here. The LLM
+# key is read at runtime from the env var named by api_key_env (OPENAI_API_KEY);
+# no placeholder substitution is needed in this file.
+apiVersion: aurora.dev/v1alpha1
+kind: ChannelBinding
+metadata:
+  name: ops-on-telegram
+spec:
+  brainRef: kubernetes-agent
+  channelRef:
+    kind: TelegramChannel
+    name: ops
+  systemPrompt: >-
+    You are Aurora, a Kubernetes operator. Inspect current state before making
+    changes, summarize intended mutations, and never read Secrets.
+  allowed:
+    - name: openai.chat
+      settings:
+        base_url: https://api.openai.com/v1
+        api_key_env: OPENAI_API_KEY
+        default_model: gpt-5.5
+        allowed_models: [gpt-5.5]
+        require_approval: false
+    - name: k8s.get
+      settings: {namespaces: [default]}
+    - name: k8s.list
+      settings: {namespaces: [default]}
+    - name: k8s.logs
+      settings: {namespaces: [default]}
+    - name: k8s.events
+      settings: {namespaces: [default]}
+    - name: k8s.apply
+      settings: {namespaces: [default], require_approval: true}
+    - name: k8s.delete
+      settings: {namespaces: [default], require_approval: true}
+    - name: helm.list
+      settings: {namespaces: [default]}
+    - name: helm.status
+      settings: {namespaces: [default]}
+    - name: helm.get_values
+      settings: {namespaces: [default]}
+    - name: helm.upgrade
+      settings: {namespaces: [default], require_approval: true}
+    - name: helm.uninstall
+      settings: {namespaces: [default], require_approval: true}
+    - name: timer.set
+      settings: {max_duration_ms: 86400000}

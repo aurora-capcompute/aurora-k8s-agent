@@ -1,18 +1,21 @@
 .PHONY: brain test race vet build helm-lint docker
 
+# The agent no longer embeds a brain; build targets don't depend on one. This
+# builds the example brain (TinyGo) and packs it into an OCI layout you can load
+# via AURORA_BRAINS=oci-layout:examples/brain/dist/layout or a Brain CRD.
 brain:
-	sh brain/build.sh
+	sh examples/brain/build.sh
 
-test: brain
+test:
 	go test ./...
 
-race: brain
+race:
 	go test -race ./...
 
-vet: brain
+vet:
 	go vet ./...
 
-build: brain
+build:
 	CGO_ENABLED=1 go build -o bin/aurora-k8s-agent ./cmd/aurora-k8s-agent
 
 helm-lint:

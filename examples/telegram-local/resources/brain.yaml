@@ -1,0 +1,9 @@
+# The brain artifact, referenced as a registry-less on-disk OCI layout. run.sh
+# rewrites __BRAIN_LAYOUT__ to the absolute path of examples/brain/dist/layout.
+# In k8s you would instead bake the layout into the image (see ../telegram-k8s).
+apiVersion: aurora.dev/v1alpha1
+kind: Brain
+metadata:
+  name: kubernetes-agent
+spec:
+  artifact: oci-layout:__BRAIN_LAYOUT__:latest

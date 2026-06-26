@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,6 +28,7 @@ import (
 	"aurora-dispatchers/registry"
 	"aurora-k8s-agent/internal/assembly"
 	"aurora-k8s-agent/internal/bot"
+	"aurora-k8s-agent/internal/brainspec"
 	"aurora-k8s-agent/internal/channelsup"
 	"aurora-k8s-agent/internal/controller"
 	"aurora-k8s-agent/internal/oci"
@@ -59,6 +61,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "pack-brain" {
+		if err := packBrain(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "pack-brain:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("aurora-k8s-agent stopped", "error", err)
 		os.Exit(1)
@@ -85,6 +94,49 @@ func sealSecret() error {
 		return err
 	}
 	fmt.Println(out)
+	return nil
+}
+
+// packBrain compiles a brain manifest + wasm into an on-disk OCI image layout so
+// it can be loaded with no registry — referenced as "oci-layout:<dir>:<tag>" from
+// a Brain CRD's artifact or from AURORA_BRAINS, locally or baked into an image.
+// Usage:
+//
+//	aurora-k8s-agent pack-brain --wasm brain.wasm --manifest manifest.json --out ./layout [--tag latest]
+func packBrain(args []string) error {
+	fs := flag.NewFlagSet("pack-brain", flag.ContinueOnError)
+	wasmPath := fs.String("wasm", "", "path to the compiled brain wasm")
+	manifestPath := fs.String("manifest", "", "path to the brain manifest (brainspec JSON)")
+	outDir := fs.String("out", "", "output directory for the OCI layout")
+	tag := fs.String("tag", "latest", "tag for the packed artifact")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *wasmPath == "" || *manifestPath == "" || *outDir == "" {
+		return errors.New("--wasm, --manifest and --out are required")
+	}
+	wasm, err := os.ReadFile(*wasmPath)
+	if err != nil {
+		return fmt.Errorf("read wasm: %w", err)
+	}
+	manifestJSON, err := os.ReadFile(*manifestPath)
+	if err != nil {
+		return fmt.Errorf("read manifest: %w", err)
+	}
+	// Validate the manifest (and its ABI) up front so packing fails fast on a bad
+	// brain rather than at load time.
+	spec, err := brainspec.Parse(manifestJSON)
+	if err != nil {
+		return err
+	}
+	if err := spec.CheckABI(); err != nil {
+		return err
+	}
+	digest, err := oci.WriteLayout(context.Background(), *outDir, *tag, manifestJSON, wasm)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("packed brain %q -> oci-layout:%s:%s (%s)\n", spec.ID, *outDir, *tag, digest)
 	return nil
 }
 
@@ -195,7 +247,16 @@ func run() error {
 	var supervisor *channelsup.Supervisor
 	onResolved := func(res controller.Resolved) {
 		logger.Info("control plane resolved",
-			"brainRefs", res.BrainRefs, "bindings", len(res.Bindings), "channels", len(res.Channels))
+			"brains", len(res.Brains), "bindings", len(res.Bindings), "channels", len(res.Channels))
+		// Hot-load the brains declared by Brain CRDs into the running runtime, so
+		// the agent boots with none and gains them as resources appear.
+		brainSources := make([]aurora.BrainSource, len(res.Brains))
+		for i, b := range res.Brains {
+			brainSources[i] = aurora.BrainSource{ID: b.ID, Wasm: b.Wasm}
+		}
+		if err := runtime.SetBrains(ctx, brainSources); err != nil {
+			logger.Error("apply brains from control plane", "error", err)
+		}
 		webChannel.Apply(res)
 		if supervisor != nil {
 			supervisor.Apply(res)
@@ -325,14 +386,17 @@ func sourceKinds() []string {
 	return kinds
 }
 
-// buildBrainProvider selects the brain source. With AURORA_BRAINS set (a comma
-// list of OCI references) brains are pulled from registries; otherwise the
-// embedded kubernetes-agent brain is used. Registry auth comes from
+// buildBrainProvider selects the brain source loaded at startup. With
+// AURORA_BRAINS set (a comma list of references — registry refs or
+// "oci-layout:<dir>:<tag>" for a registry-less on-disk layout) those brains are
+// loaded up front. With it unset the agent boots with no brain (EmptyProvider);
+// brains are then supplied at runtime by Brain CRDs through the control plane,
+// which hot-loads them via runtime.SetBrains. Registry auth comes from
 // AURORA_REGISTRY_USERNAME/PASSWORD; AURORA_REGISTRY_PLAIN_HTTP=true uses HTTP.
 func buildBrainProvider(ctx context.Context, logger *slog.Logger) (aurora.BrainProvider, error) {
 	refs := splitList(os.Getenv("AURORA_BRAINS"))
 	if len(refs) == 0 {
-		return assembly.BrainProvider{}, nil
+		return assembly.EmptyProvider{}, nil
 	}
 	provider, err := assembly.NewOCIBrainProvider(ctx, refs, os.Getenv("AURORA_BRAIN_DEFAULT"), oci.NewRemotePuller(ociOptionsFromEnv()...))
 	if err != nil {

@@ -122,8 +122,13 @@ func NewRemotePuller(opts ...Option) *RemotePuller {
 	return p
 }
 
-// Pull resolves reference (e.g. ghcr.io/org/brain:tag) into a brain artifact.
+// Pull resolves reference into a brain artifact. A registry reference (e.g.
+// ghcr.io/org/brain:tag) is fetched over the network; an "oci-layout:" reference
+// is read from an on-disk OCI layout, so a brain can be loaded with no registry.
 func (p *RemotePuller) Pull(ctx context.Context, reference string) (Artifact, error) {
+	if IsLayoutRef(reference) {
+		return pullLayout(ctx, reference)
+	}
 	repo, err := remote.NewRepository(reference)
 	if err != nil {
 		return Artifact{}, fmt.Errorf("parse reference %q: %w", reference, err)

@@ -74,6 +74,7 @@ type SourceBinding struct {
 // via ChannelKey, since names can repeat across the typed channel kinds).
 type Resolved struct {
 	BrainRefs     []string
+	Brains        []ResolvedBrain
 	Bindings      []SourceBinding
 	Channels      []ResolvedChannel
 	BrainStatus   map[string]v1alpha1.BrainStatus
@@ -100,6 +101,16 @@ type loadedBrain struct {
 	decl   brainspec.Manifest
 	ref    string
 	digest string
+	wasm   []byte
+}
+
+// ResolvedBrain is a ready brain artifact's runnable payload: the declared brain
+// id the runtime registers it under, its wasm, and its content digest. The agent
+// feeds these to runtime.SetBrains so Brain CRDs hot-load into a running runtime.
+type ResolvedBrain struct {
+	ID     string
+	Digest string
+	Wasm   []byte
 }
 
 // resolvedChannel is a typed channel normalised to a transport source plus its
@@ -132,7 +143,7 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 			res.BrainStatus[b.Name] = v1alpha1.BrainStatus{Message: fmt.Sprintf("pull %s: %v", b.Spec.Artifact, err)}
 			continue
 		}
-		brains[b.Name] = loadedBrain{decl: artifact.Manifest, ref: b.Spec.Artifact, digest: artifact.Digest}
+		brains[b.Name] = loadedBrain{decl: artifact.Manifest, ref: b.Spec.Artifact, digest: artifact.Digest, wasm: artifact.Wasm}
 		res.BrainStatus[b.Name] = v1alpha1.BrainStatus{
 			Ready: true, Digest: artifact.Digest, BrainID: artifact.Manifest.ID,
 			Capabilities: capabilityNames(artifact.Manifest),
@@ -184,8 +195,32 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 	}
 
 	res.Channels = collectChannels(channels)
+	res.Brains = collectBrains(brains)
 	res.BrainRefs = sortedKeys(refs)
 	return res
+}
+
+// collectBrains projects every ready brain into a runnable artifact for the
+// runtime, keyed by the brain's declared id (which is what manifests reference).
+// If two Brain resources declare the same id, the first by id order wins; the
+// result is sorted for a stable SetBrains apply.
+func collectBrains(brains map[string]loadedBrain) []ResolvedBrain {
+	byID := make(map[string]ResolvedBrain, len(brains))
+	for _, b := range brains {
+		if len(b.wasm) == 0 {
+			continue
+		}
+		if _, dup := byID[b.decl.ID]; dup {
+			continue
+		}
+		byID[b.decl.ID] = ResolvedBrain{ID: b.decl.ID, Digest: b.digest, Wasm: b.wasm}
+	}
+	out := make([]ResolvedBrain, 0, len(byID))
+	for _, rb := range byID {
+		out = append(out, rb)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // collectChannels turns the ready-channel registry into a stable, exported slice.

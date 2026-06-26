@@ -54,6 +54,9 @@ func (r *flowRuntime) CreateThread(manifest aurora.Manifest) (aurora.ThreadSnaps
 
 func (r *flowRuntime) ListThreads() []aurora.ThreadSummary { return nil }
 func (r *flowRuntime) Brains() []aurora.BrainArtifact      { return nil }
+func (r *flowRuntime) SetBrains(context.Context, []aurora.BrainSource) error {
+	return nil
+}
 func (r *flowRuntime) GetThread(string) (aurora.ThreadSnapshot, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
