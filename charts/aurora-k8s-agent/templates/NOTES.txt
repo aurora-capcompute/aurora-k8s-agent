@@ -9,3 +9,14 @@ Configured target namespaces:
 {{- range .Values.rbac.targetNamespaces }}
   - {{ . }}
 {{- end }}
+{{- if .Values.controller.enabled }}
+
+Control plane is enabled: channels come from Brain/SlackChannel/TelegramChannel/
+WebChannel/ChannelBinding CRDs. The Secret {{ include "aurora-k8s-agent.secretName" . | quote }}
+must include a `secret-key` entry — the key that decrypts each channel's
+inPlaceEncrypted token. Seal a channel token with that same key:
+
+  printf %s "$TOKEN" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
+
+Without `secret-key` the agent runs but starts no channel bridges.
+{{- end }}

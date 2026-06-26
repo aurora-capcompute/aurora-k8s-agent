@@ -18,15 +18,22 @@ registry:
   username: ""
   passwordKey: registry-password
 
-# Control-plane controller: watch Brain/FunctionInstance/Channel CRDs and
-# reconcile them into runtime config. Installs the CRDs and grants RBAC to watch
-# them. Requires rbac.create.
+# Control-plane controller: watch Brain, the typed channels (SlackChannel,
+# TelegramChannel, WebChannel) and ChannelBinding CRDs and reconcile them into
+# runtime config. When enabled the controller owns the chat channels — a
+# supervisor builds one live bridge per channel CRD, decrypting each channel's
+# inPlaceEncrypted token with `secret-key` from the Secret (see secretName).
+# Installs the CRDs and grants RBAC to watch them. Requires rbac.create.
 controller:
   enabled: false
   namespace: ""         # watch scope; empty = all namespaces
 
-# Communication sources (callers). One or more of: telegram, slack — they run
-# concurrently against the same runtime (AURORA_SOURCES).
+# Communication sources for the NO-control-plane path (controller.enabled=false):
+# the agent builds a single client per source from env tokens + the `policy`
+# below. With controller.enabled=true these are ignored — channels come from the
+# typed channel CRDs and the supervisor instead.
+# One or more of: telegram, slack — they run concurrently against the same
+# runtime (AURORA_SOURCES).
 # - telegram: secret must contain `telegram-bot-token`. Policy users are keyed by
 #   numeric Telegram user IDs with `allowed_chats`.
 # - slack: secret must contain `slack-app-token` (xapp-…, connections:write) and
@@ -140,8 +147,14 @@ policy:
               - name: helm.get_values
                 settings: {namespaces: [default]}
 
-# Secret must contain: telegram-bot-token, task-secret, state-key,
-# and the LLM API key under the key named by llmSecretKey.
+# Secret must contain: task-secret, state-key, the LLM API key under the key
+# named by llmSecretKey, and — for the no-control-plane path — telegram-bot-token
+# / slack-app-token / slack-bot-token for the configured channels.
+# When controller.enabled, it must also contain `secret-key`: the key that
+# decrypts channel `inPlaceEncrypted` credentials. Seal a channel token with the
+# same key via `aurora-k8s-agent seal-secret`:
+#   printf %s "$TOKEN" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
+# If `secret-key` is absent the agent still runs but starts no channel bridges.
 secretName: ""
 llmSecretKey: openai-api-key
 llmEnvVar: OPENAI_API_KEY
