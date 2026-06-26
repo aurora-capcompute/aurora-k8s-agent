@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"aurora-capcompute/aurora"
@@ -18,7 +19,7 @@ type Service struct {
 	runtime  aurora.Runtime
 	client   *telegram.Client
 	store    *state.Store
-	policies *policy.Set
+	policies atomic.Pointer[policy.Set]
 	identity telegram.BotIdentity
 	logger   *slog.Logger
 	timers   *timerScheduler
@@ -35,12 +36,28 @@ func New(
 	identity telegram.BotIdentity,
 	logger *slog.Logger,
 ) *Service {
-	return &Service{
-		runtime: runtime, client: client, store: store, policies: policies,
+	s := &Service{
+		runtime: runtime, client: client, store: store,
 		identity: identity, logger: logger,
 		timers:        newTimerScheduler(runtime, logger),
 		subscriptions: make(map[string]func()),
 	}
+	s.policies.Store(policies)
+	return s
+}
+
+// SetPolicies atomically swaps the authorization set, so the control plane can
+// reroute a live bridge when bindings change without dropping the transport.
+func (s *Service) SetPolicies(p *policy.Set) { s.policies.Store(p) }
+
+// authorize routes a subject through the current policy set, tolerating a nil set
+// (no bindings yet) as "not authorized".
+func (s *Service) authorize(userID, chatID int64) (policy.User, bool) {
+	p := s.policies.Load()
+	if p == nil {
+		return policy.User{}, false
+	}
+	return p.Authorize(userID, chatID)
 }
 
 // Kind identifies this source. Implements source.Source.
@@ -130,7 +147,7 @@ func (s *Service) handleUpdate(ctx context.Context, update telegram.Update) erro
 		return nil
 	}
 	message := update.Message
-	user, ok := s.policies.Authorize(message.From.ID, message.Chat.ID)
+	user, ok := s.authorize(message.From.ID, message.Chat.ID)
 	if !ok {
 		return nil
 	}

@@ -106,6 +106,13 @@ func parseBindings(raw []byte, provider aurora.DispatcherProvider) (*Set, error)
 	if err != nil {
 		return nil, err
 	}
+	return FromResolved(resolved)
+}
+
+// FromResolved builds the Telegram authorization set from already-resolved
+// bindings (e.g. produced by the control plane), so the same routing applies
+// whether bindings come from a file or from live channel CRDs.
+func FromResolved(resolved []binding.Resolved) (*Set, error) {
 	set := &Set{users: make(map[int64]User)}
 	for _, r := range resolved {
 		chats := make(map[int64]struct{}, len(r.Scopes))

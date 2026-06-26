@@ -75,9 +75,22 @@ type SourceBinding struct {
 type Resolved struct {
 	BrainRefs     []string
 	Bindings      []SourceBinding
+	Channels      []ResolvedChannel
 	BrainStatus   map[string]v1alpha1.BrainStatus
 	ChannelStatus map[string]v1alpha1.ChannelStatus
 	BindingStatus map[string]v1alpha1.ChannelBindingStatus
+}
+
+// ResolvedChannel groups a ready typed channel with the bindings that target it,
+// so a channel supervisor can construct one live bridge per channel CRD. Secrets
+// carries the channel's unresolved credential sources (keyed e.g. "botToken",
+// "appToken"); the supervisor holds the key and resolves them.
+type ResolvedChannel struct {
+	Kind     string
+	Name     string
+	Source   string
+	Secrets  map[string]v1alpha1.SecretSource
+	Bindings []binding.Resolved
 }
 
 // ChannelKey is the status-map key for a typed channel.
@@ -90,11 +103,16 @@ type loadedBrain struct {
 }
 
 // resolvedChannel is a typed channel normalised to a transport source plus its
-// subjects, after validation.
+// subjects and credential sources, after validation. bindings accumulates the
+// bindings that successfully resolve against it.
 type resolvedChannel struct {
-	source string
-	users  []string
-	scopes []string
+	kind     string
+	name     string
+	source   string
+	users    []string
+	scopes   []string
+	secrets  map[string]v1alpha1.SecretSource
+	bindings []binding.Resolved
 }
 
 // Reconcile resolves inputs into runtime config and per-resource status. It never
@@ -121,7 +139,7 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 		}
 	}
 
-	channels := make(map[string]resolvedChannel)
+	channels := make(map[string]*resolvedChannel)
 	resolveChannels(in, channels, res.ChannelStatus)
 
 	refs := make(map[string]struct{})
@@ -153,28 +171,48 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 			continue
 		}
 
-		res.Bindings = append(res.Bindings, SourceBinding{
-			Source: channel.source,
-			Name:   bnd.Name,
-			Resolved: binding.Resolved{
-				Users:    append([]string(nil), channel.users...),
-				Scopes:   append([]string(nil), channel.scopes...),
-				Manifest: validated,
-				Digest:   digest(validated),
-			},
-		})
+		resolved := binding.Resolved{
+			Users:    append([]string(nil), channel.users...),
+			Scopes:   append([]string(nil), channel.scopes...),
+			Manifest: validated,
+			Digest:   digest(validated),
+		}
+		res.Bindings = append(res.Bindings, SourceBinding{Source: channel.source, Name: bnd.Name, Resolved: resolved})
+		channel.bindings = append(channel.bindings, resolved)
 		refs[brain.ref] = struct{}{}
 		res.BindingStatus[bnd.Name] = v1alpha1.ChannelBindingStatus{Ready: true}
 	}
 
+	res.Channels = collectChannels(channels)
 	res.BrainRefs = sortedKeys(refs)
 	return res
+}
+
+// collectChannels turns the ready-channel registry into a stable, exported slice.
+func collectChannels(channels map[string]*resolvedChannel) []ResolvedChannel {
+	out := make([]ResolvedChannel, 0, len(channels))
+	for _, c := range channels {
+		out = append(out, ResolvedChannel{
+			Kind:     c.kind,
+			Name:     c.name,
+			Source:   c.source,
+			Secrets:  c.secrets,
+			Bindings: c.bindings,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
 }
 
 // resolveChannels validates each typed channel and records it in the registry
 // (keyed by ChannelKey) and its status. Slack/Telegram require credentials and
 // non-empty subjects; Web carries no secret and may omit subjects.
-func resolveChannels(in Inputs, out map[string]resolvedChannel, status map[string]v1alpha1.ChannelStatus) {
+func resolveChannels(in Inputs, out map[string]*resolvedChannel, status map[string]v1alpha1.ChannelStatus) {
 	for _, c := range in.SlackChannels {
 		key := ChannelKey(v1alpha1.KindSlackChannel, c.Name)
 		if err := validateSecret("appToken", c.Spec.AppToken); err != nil {
@@ -189,7 +227,11 @@ func resolveChannels(in Inputs, out map[string]resolvedChannel, status map[strin
 			status[key] = v1alpha1.ChannelStatus{Message: err.Error()}
 			continue
 		}
-		out[key] = resolvedChannel{source: "slack", users: c.Spec.Users, scopes: c.Spec.Scopes}
+		out[key] = &resolvedChannel{
+			kind: v1alpha1.KindSlackChannel, name: c.Name, source: "slack",
+			users: c.Spec.Users, scopes: c.Spec.Scopes,
+			secrets: map[string]v1alpha1.SecretSource{"appToken": c.Spec.AppToken, "botToken": c.Spec.BotToken},
+		}
 		status[key] = v1alpha1.ChannelStatus{Ready: true}
 	}
 	for _, c := range in.TelegramChannels {
@@ -202,12 +244,19 @@ func resolveChannels(in Inputs, out map[string]resolvedChannel, status map[strin
 			status[key] = v1alpha1.ChannelStatus{Message: err.Error()}
 			continue
 		}
-		out[key] = resolvedChannel{source: "telegram", users: c.Spec.Users, scopes: c.Spec.Scopes}
+		out[key] = &resolvedChannel{
+			kind: v1alpha1.KindTelegramChannel, name: c.Name, source: "telegram",
+			users: c.Spec.Users, scopes: c.Spec.Scopes,
+			secrets: map[string]v1alpha1.SecretSource{"botToken": c.Spec.BotToken},
+		}
 		status[key] = v1alpha1.ChannelStatus{Ready: true}
 	}
 	for _, c := range in.WebChannels {
 		key := ChannelKey(v1alpha1.KindWebChannel, c.Name)
-		out[key] = resolvedChannel{source: "web", users: c.Spec.Users, scopes: c.Spec.Scopes}
+		out[key] = &resolvedChannel{
+			kind: v1alpha1.KindWebChannel, name: c.Name, source: "web",
+			users: c.Spec.Users, scopes: c.Spec.Scopes,
+		}
 		status[key] = v1alpha1.ChannelStatus{Ready: true}
 	}
 }

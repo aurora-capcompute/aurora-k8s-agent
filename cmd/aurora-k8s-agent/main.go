@@ -27,10 +27,12 @@ import (
 	"aurora-dispatchers/registry"
 	"aurora-k8s-agent/internal/assembly"
 	"aurora-k8s-agent/internal/bot"
+	"aurora-k8s-agent/internal/channelsup"
 	"aurora-k8s-agent/internal/controller"
 	"aurora-k8s-agent/internal/oci"
 	"aurora-k8s-agent/internal/policy"
 	"aurora-k8s-agent/internal/secretbox"
+	"aurora-k8s-agent/internal/secrets"
 	slackclient "aurora-k8s-agent/internal/slack"
 	"aurora-k8s-agent/internal/slackbot"
 	"aurora-k8s-agent/internal/slackpolicy"
@@ -173,7 +175,6 @@ func run() error {
 		defer api.Shutdown(context.Background())
 	}
 
-	kinds := sourceKinds()
 	var (
 		sources []source.Source
 		closers []func()
@@ -183,37 +184,68 @@ func run() error {
 			closers[i]()
 		}
 	}()
-	for _, kind := range kinds {
-		var (
-			src    source.Source
-			closer func()
-		)
-		switch kind {
-		case "telegram":
-			src, closer, err = buildTelegram(ctx, runtime, provider, policyPath, dataDir, stateKey, logger)
-		case "slack":
-			src, closer, err = buildSlack(ctx, runtime, provider, policyPath, dataDir, stateKey, logger)
-		default:
-			return fmt.Errorf("unknown source %q (want telegram or slack)", kind)
-		}
-		if err != nil {
-			return err
-		}
-		sources = append(sources, src)
-		if closer != nil {
-			closers = append(closers, closer)
+
+	cpKind := controlPlaneKind()
+	cpEnabled := cpKind == "k8s" || cpKind == "fs"
+
+	// When the control plane is enabled it owns the chat channels: a supervisor
+	// builds one live bridge per typed channel CRD, tokens resolved from the
+	// channel's SecretSource. onResolved fans each reconciliation out to the web
+	// channel registry and the supervisor.
+	var supervisor *channelsup.Supervisor
+	onResolved := func(res controller.Resolved) {
+		logger.Info("control plane resolved",
+			"brainRefs", res.BrainRefs, "bindings", len(res.Bindings), "channels", len(res.Channels))
+		webChannel.Apply(res)
+		if supervisor != nil {
+			supervisor.Apply(res)
 		}
 	}
 
-	switch controlPlaneKind() {
+	kinds := sourceKinds()
+	if cpEnabled {
+		if secretKey, keyErr := requiredSecret("AURORA_SECRET_KEY", "AURORA_SECRET_KEY_FILE"); keyErr != nil {
+			logger.Warn("AURORA_SECRET_KEY not set; channel CRDs will not start live bridges", "error", keyErr)
+		} else {
+			supervisor = channelsup.New(runtime, secrets.NewInPlace(secretKey), dataDir, stateKey,
+				os.Getenv("TELEGRAM_API_BASE_URL"), logger)
+			sources = append(sources, supervisor)
+		}
+	} else {
+		// No control plane: the legacy env/file path builds a single client per
+		// configured source.
+		for _, kind := range kinds {
+			var (
+				src    source.Source
+				closer func()
+			)
+			switch kind {
+			case "telegram":
+				src, closer, err = buildTelegram(ctx, runtime, provider, policyPath, dataDir, stateKey, logger)
+			case "slack":
+				src, closer, err = buildSlack(ctx, runtime, provider, policyPath, dataDir, stateKey, logger)
+			default:
+				return fmt.Errorf("unknown source %q (want telegram or slack)", kind)
+			}
+			if err != nil {
+				return err
+			}
+			sources = append(sources, src)
+			if closer != nil {
+				closers = append(closers, closer)
+			}
+		}
+	}
+
+	switch cpKind {
 	case "k8s":
-		ctrl, err := buildController(provider, webChannel, logger)
+		ctrl, err := buildController(provider, onResolved, logger)
 		if err != nil {
 			return err
 		}
 		sources = append(sources, ctrl)
 	case "fs":
-		fsControl, err := buildFileControlPlane(provider, webChannel, logger)
+		fsControl, err := buildFileControlPlane(provider, onResolved, logger)
 		if err != nil {
 			return err
 		}
@@ -221,7 +253,7 @@ func run() error {
 	case "none":
 		// No control plane.
 	default:
-		return fmt.Errorf("unknown control plane %q (want k8s, fs, or none)", controlPlaneKind())
+		return fmt.Errorf("unknown control plane %q (want k8s, fs, or none)", cpKind)
 	}
 
 	ready.Store(true)
@@ -232,7 +264,8 @@ func run() error {
 		<-ctx.Done()
 		return nil
 	}
-	logger.Info("Aurora agent started", "version", version, "sources", kinds, "control_plane", controlPlaneKind())
+	logger.Info("Aurora agent started", "version", version,
+		"sources", kinds, "control_plane", cpKind, "channel_supervisor", supervisor != nil)
 	return source.Run(ctx, logger, sources...)
 }
 
@@ -252,7 +285,7 @@ func controlPlaneKind() string {
 
 // buildFileControlPlane builds the filesystem control plane reading manifests
 // from AURORA_RESOURCES_DIR (re-scanned every AURORA_RESOURCES_RESYNC, default 30s).
-func buildFileControlPlane(provider aurora.DispatcherProvider, webChannel *webchannel.Channel, logger *slog.Logger) (source.Source, error) {
+func buildFileControlPlane(provider aurora.DispatcherProvider, onResolved func(controller.Resolved), logger *slog.Logger) (source.Source, error) {
 	dir := strings.TrimSpace(os.Getenv("AURORA_RESOURCES_DIR"))
 	if dir == "" {
 		return nil, errors.New("fs control plane requires AURORA_RESOURCES_DIR")
@@ -264,11 +297,6 @@ func buildFileControlPlane(provider aurora.DispatcherProvider, webChannel *webch
 			return nil, fmt.Errorf("invalid AURORA_RESOURCES_RESYNC %q: %w", raw, err)
 		}
 		resync = parsed
-	}
-	onResolved := func(res controller.Resolved) {
-		logger.Info("control plane resolved",
-			"brainRefs", res.BrainRefs, "bindings", len(res.Bindings))
-		webChannel.Apply(res)
 	}
 	return controller.NewFileSource(dir, resync,
 		oci.NewRemotePuller(ociOptionsFromEnv()...), provider, onResolved, logger), nil
@@ -332,7 +360,7 @@ func ociOptionsFromEnv() []oci.Option {
 // ChannelBinding resources and reconciles them, writing status back. Enabled with
 // AURORA_CONTROLLER=true; AURORA_CONTROLLER_NAMESPACE scopes
 // the watch (empty = all namespaces).
-func buildController(provider aurora.DispatcherProvider, webChannel *webchannel.Channel, logger *slog.Logger) (source.Source, error) {
+func buildController(provider aurora.DispatcherProvider, onResolved func(controller.Resolved), logger *slog.Logger) (source.Source, error) {
 	cfg, err := rest.InClusterConfig()
 	if err != nil {
 		return nil, fmt.Errorf("controller requires in-cluster config: %w", err)
@@ -340,11 +368,6 @@ func buildController(provider aurora.DispatcherProvider, webChannel *webchannel.
 	dyn, err := dynamic.NewForConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("controller dynamic client: %w", err)
-	}
-	onResolved := func(res controller.Resolved) {
-		logger.Info("control plane resolved",
-			"brainRefs", res.BrainRefs, "bindings", len(res.Bindings))
-		webChannel.Apply(res)
 	}
 	return controller.New(dyn, os.Getenv("AURORA_CONTROLLER_NAMESPACE"),
 		oci.NewRemotePuller(ociOptionsFromEnv()...), provider, onResolved, logger), nil
