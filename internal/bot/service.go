@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"aurora-capcompute/aurora"
+	"aurora-k8s-agent/internal/chat"
 	chattimers "aurora-k8s-agent/internal/chat/timers"
 	"aurora-k8s-agent/internal/policy"
 	"aurora-k8s-agent/internal/state"
@@ -24,9 +24,7 @@ type Service struct {
 	identity telegram.BotIdentity
 	logger   *slog.Logger
 	timers   *chattimers.Scheduler
-
-	mu            sync.Mutex
-	subscriptions map[string]func()
+	subs     *chat.Subscriptions
 }
 
 func New(
@@ -40,8 +38,8 @@ func New(
 	s := &Service{
 		runtime: runtime, client: client, store: store,
 		identity: identity, logger: logger,
-		timers:        chattimers.NewScheduler(runtime, logger),
-		subscriptions: make(map[string]func()),
+		timers: chattimers.NewScheduler(runtime, logger),
+		subs:   chat.NewSubscriptions(runtime, logger),
 	}
 	s.policies.Store(policies)
 	return s
@@ -226,33 +224,9 @@ func (s *Service) rotateConversation(ctx context.Context, user policy.User, chat
 }
 
 func (s *Service) subscribe(ctx context.Context, conversation state.Conversation) {
-	s.mu.Lock()
-	if _, exists := s.subscriptions[conversation.ThreadID]; exists {
-		s.mu.Unlock()
-		return
-	}
-	snapshot, events, unsubscribe, err := s.runtime.Subscribe(conversation.ThreadID)
-	if err != nil {
-		s.mu.Unlock()
-		s.logger.Warn("subscribe thread", "thread_id", conversation.ThreadID, "error", err)
-		return
-	}
-	s.subscriptions[conversation.ThreadID] = unsubscribe
-	s.mu.Unlock()
-	go func() {
-		s.handleEvent(context.Background(), conversation, snapshot)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case event, ok := <-events:
-				if !ok {
-					return
-				}
-				s.handleEvent(context.Background(), conversation, event)
-			}
-		}
-	}()
+	s.subs.Add(ctx, conversation.ThreadID, func(event aurora.Event) {
+		s.handleEvent(context.Background(), conversation, event)
+	})
 }
 
 func (s *Service) Recover(ctx context.Context) error {
@@ -334,11 +308,4 @@ func (s *Service) send(ctx context.Context, chatID int64, text string, keyboard 
 	return nil
 }
 
-func (s *Service) unsubscribeAll() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, cancel := range s.subscriptions {
-		cancel()
-	}
-	s.subscriptions = make(map[string]func())
-}
+func (s *Service) unsubscribeAll() { s.subs.CloseAll() }
