@@ -5,11 +5,16 @@ image:
 
 imagePullSecrets: []
 
-# Brains pulled from OCI registries (sets AURORA_BRAINS). Empty uses the brain
-# embedded at build time.
+# Brains loaded at startup (sets AURORA_BRAINS). The agent embeds no brain: leave
+# this empty to boot brain-less and supply brains at runtime via Brain CRDs (with
+# controller.enabled), or list references here. A reference is a registry ref or
+# "oci-layout:<dir>:<tag>" for a registry-less on-disk layout baked into the image
+# (see examples/telegram-k8s). With no brain configured the agent stays healthy;
+# only brain runs wait until one is supplied.
 brains: []
 # brains:
 #   - ghcr.io/acme/brain-k8s:1.4
+#   - oci-layout:/brains/kubernetes-agent:latest
 brainDefault: ""        # brain id used when a manifest omits one; empty = first
 
 # Registry auth for pulling brains. The password is read from the Secret under

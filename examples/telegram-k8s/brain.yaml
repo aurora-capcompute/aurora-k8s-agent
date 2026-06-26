@@ -1,0 +1,10 @@
+# The brain artifact, loaded from an OCI layout baked into the agent image at
+# /brains/kubernetes-agent (see Dockerfile) — no registry required. To pull from
+# a registry instead, set artifact to a normal ref, e.g.
+#   artifact: ghcr.io/you/brain-k8s:1.0
+apiVersion: aurora.dev/v1alpha1
+kind: Brain
+metadata:
+  name: kubernetes-agent
+spec:
+  artifact: oci-layout:/brains/kubernetes-agent:latest

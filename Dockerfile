@@ -1,24 +1,12 @@
 # syntax=docker/dockerfile:1.7
 
-FROM tinygo/tinygo:0.41.1 AS brain
-USER root
-WORKDIR /src
-COPY . .
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache \
-    mkdir -p /out && \
-    tinygo build \
-      -target wasip1 \
-      -buildmode=c-shared \
-      -tags tinygo \
-      -o /out/kubernetes-agent.wasm \
-      ./brain
-
+# The agent ships no brain: it boots brain-less and loads brains at runtime from
+# Brain CRDs (or AURORA_BRAINS). The example brain lives under examples/ and is
+# built/packed separately (see examples/telegram-k8s).
 FROM golang:1.26-alpine AS build
 RUN apk add --no-cache build-base git
 WORKDIR /src
 COPY . .
-COPY --from=brain /out/kubernetes-agent.wasm /src/internal/assembly/kubernetes-agent.wasm
 ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \

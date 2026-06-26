@@ -1,0 +1,47 @@
+# Satisfies the brain's interface with one flat grant and wires it to the channel.
+# The LLM key is read from the env var named by api_key_env; the chart sets
+# OPENAI_API_KEY from the agent Secret (llmSecretKey/llmEnvVar).
+apiVersion: aurora.dev/v1alpha1
+kind: ChannelBinding
+metadata:
+  name: ops-on-telegram
+spec:
+  brainRef: kubernetes-agent
+  channelRef:
+    kind: TelegramChannel
+    name: ops
+  systemPrompt: >-
+    You are Aurora, a Kubernetes operator. Inspect current state before making
+    changes, summarize intended mutations, and never read Secrets.
+  allowed:
+    - name: openai.chat
+      settings:
+        base_url: https://api.openai.com/v1
+        api_key_env: OPENAI_API_KEY
+        default_model: gpt-5.5
+        allowed_models: [gpt-5.5]
+        require_approval: false
+    - name: k8s.get
+      settings: {namespaces: [default]}
+    - name: k8s.list
+      settings: {namespaces: [default]}
+    - name: k8s.logs
+      settings: {namespaces: [default]}
+    - name: k8s.events
+      settings: {namespaces: [default]}
+    - name: k8s.apply
+      settings: {namespaces: [default], require_approval: true}
+    - name: k8s.delete
+      settings: {namespaces: [default], require_approval: true}
+    - name: helm.list
+      settings: {namespaces: [default]}
+    - name: helm.status
+      settings: {namespaces: [default]}
+    - name: helm.get_values
+      settings: {namespaces: [default]}
+    - name: helm.upgrade
+      settings: {namespaces: [default], require_approval: true}
+    - name: helm.uninstall
+      settings: {namespaces: [default], require_approval: true}
+    - name: timer.set
+      settings: {max_duration_ms: 86400000}

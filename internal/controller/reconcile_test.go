@@ -99,6 +99,12 @@ func TestReconcileHappyPath(t *testing.T) {
 	if len(res.BrainRefs) != 1 || res.BrainRefs[0] != "ghcr/ops:1" {
 		t.Fatalf("brain refs = %v", res.BrainRefs)
 	}
+	// The pulled wasm is carried through for live runtime registration, keyed by
+	// the brain's declared id.
+	if len(res.Brains) != 1 || res.Brains[0].ID != "ops" ||
+		string(res.Brains[0].Wasm) != "\x00asm" || res.Brains[0].Digest != "sha256:ops" {
+		t.Fatalf("resolved brains = %+v", res.Brains)
+	}
 }
 
 func TestReconcileRejectsUndeclaredCapability(t *testing.T) {

@@ -1,0 +1,19 @@
+{
+  "id": "kubernetes-agent",
+  "abi": 1,
+  "capabilities": [
+    {"name": "openai.chat"},
+    {"name": "k8s.get", "optional": true},
+    {"name": "k8s.list", "optional": true},
+    {"name": "k8s.logs", "optional": true},
+    {"name": "k8s.events", "optional": true},
+    {"name": "k8s.apply", "optional": true},
+    {"name": "k8s.delete", "optional": true},
+    {"name": "helm.list", "optional": true},
+    {"name": "helm.status", "optional": true},
+    {"name": "helm.get_values", "optional": true},
+    {"name": "helm.upgrade", "optional": true},
+    {"name": "helm.uninstall", "optional": true},
+    {"name": "timer.set", "optional": true}
+  ]
+}
