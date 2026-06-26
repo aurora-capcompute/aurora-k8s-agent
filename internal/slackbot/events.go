@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"aurora-capcompute/aurora"
+	chattimers "aurora-k8s-agent/internal/chat/timers"
 	"aurora-k8s-agent/internal/slack"
 	state "aurora-k8s-agent/internal/slackstate"
 )
@@ -15,15 +16,15 @@ func (s *Service) handleEvent(ctx context.Context, conversation state.Conversati
 		var run aurora.RunSnapshot
 		if decodeEvent(event.Data, &run) == nil {
 			if terminal(run.Status) {
-				s.timers.cancelRun(run.ID)
+				s.timers.CancelRun(run.ID)
 			}
 			s.updateRunMessage(ctx, run)
 		}
 	case "task.created":
 		var task aurora.TaskSnapshot
 		if decodeEvent(event.Data, &task) == nil {
-			if isTimerTask(task) {
-				s.timers.schedule(task)
+			if chattimers.IsTimerTask(task) {
+				s.timers.Schedule(task)
 			} else {
 				s.createTaskMessage(ctx, conversation, task)
 			}
@@ -48,7 +49,7 @@ func (s *Service) updateRunMessage(ctx context.Context, run aurora.RunSnapshot) 
 	}
 	text, buttons := renderRun(run)
 	if run.Status == aurora.RunWaitingTask {
-		if fireAt, ok := s.timers.fireAtFor(run.ID); ok {
+		if fireAt, ok := s.timers.FireAtFor(run.ID); ok {
 			text = renderTimerWaiting(fireAt)
 		}
 	}

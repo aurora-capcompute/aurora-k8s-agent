@@ -8,10 +8,11 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"aurora-capcompute/aurora"
+	"aurora-k8s-agent/internal/chat"
+	chattimers "aurora-k8s-agent/internal/chat/timers"
 	"aurora-k8s-agent/internal/slack"
 	policy "aurora-k8s-agent/internal/slackpolicy"
 	state "aurora-k8s-agent/internal/slackstate"
@@ -23,10 +24,8 @@ type Service struct {
 	store    *state.Store
 	policies atomic.Pointer[policy.Set]
 	logger   *slog.Logger
-	timers   *timerScheduler
-
-	mu            sync.Mutex
-	subscriptions map[string]func()
+	timers   *chattimers.Scheduler
+	subs     *chat.Subscriptions
 }
 
 func New(
@@ -38,8 +37,8 @@ func New(
 ) *Service {
 	s := &Service{
 		runtime: runtime, client: client, store: store, logger: logger,
-		timers:        newTimerScheduler(runtime, logger),
-		subscriptions: make(map[string]func()),
+		timers: chattimers.NewScheduler(runtime, logger),
+		subs:   chat.NewSubscriptions(runtime, logger),
 	}
 	s.policies.Store(policies)
 	return s
@@ -70,7 +69,7 @@ func (s *Service) Start(ctx context.Context) error { return s.Run(ctx) }
 // events until ctx is cancelled.
 func (s *Service) Run(ctx context.Context) error {
 	defer s.unsubscribeAll()
-	defer s.timers.stopAll()
+	defer s.timers.StopAll()
 	if _, err := s.client.Identify(ctx); err != nil {
 		return err
 	}
@@ -138,33 +137,9 @@ func (s *Service) newConversation(ctx context.Context, user policy.User, channel
 }
 
 func (s *Service) subscribe(ctx context.Context, conversation state.Conversation) {
-	s.mu.Lock()
-	if _, exists := s.subscriptions[conversation.ThreadID]; exists {
-		s.mu.Unlock()
-		return
-	}
-	snapshot, events, unsubscribe, err := s.runtime.Subscribe(conversation.ThreadID)
-	if err != nil {
-		s.mu.Unlock()
-		s.logger.Warn("subscribe thread", "thread_id", conversation.ThreadID, "error", err)
-		return
-	}
-	s.subscriptions[conversation.ThreadID] = unsubscribe
-	s.mu.Unlock()
-	go func() {
-		s.handleEvent(context.Background(), conversation, snapshot)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case event, ok := <-events:
-				if !ok {
-					return
-				}
-				s.handleEvent(context.Background(), conversation, event)
-			}
-		}
-	}()
+	s.subs.Add(ctx, conversation.ThreadID, func(event aurora.Event) {
+		s.handleEvent(context.Background(), conversation, event)
+	})
 }
 
 // Recover re-subscribes to persisted conversations, re-arms pending timers, and
@@ -197,8 +172,8 @@ func (s *Service) Recover(ctx context.Context) error {
 				if task.State != aurora.TaskStatePending {
 					continue
 				}
-				if isTimerTask(task) {
-					s.timers.schedule(task)
+				if chattimers.IsTimerTask(task) {
+					s.timers.Schedule(task)
 					continue
 				}
 				s.createTaskMessage(ctx, conversation, task)
@@ -209,14 +184,7 @@ func (s *Service) Recover(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) unsubscribeAll() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, cancel := range s.subscriptions {
-		cancel()
-	}
-	s.subscriptions = make(map[string]func())
-}
+func (s *Service) unsubscribeAll() { s.subs.CloseAll() }
 
 var mentionPattern = regexp.MustCompile(`<@[^>]+>`)
 
