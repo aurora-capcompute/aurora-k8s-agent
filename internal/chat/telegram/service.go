@@ -1,4 +1,10 @@
-package bot
+// Package telegram is the Telegram chat adapter: it connects a Telegram bot to
+// the Aurora runtime, turning messages into agent runs, rendering run and
+// approval state back into chats, and resolving durable approval tasks from
+// inline-keyboard callbacks. It owns Telegram-shaped presentation and command
+// handling; the raw Bot API client lives in transport/telegram, and per-user
+// authorization in the policy subpackage.
+package telegram
 
 import (
 	"context"
@@ -10,10 +16,10 @@ import (
 
 	"aurora-capcompute/aurora"
 	"aurora-k8s-agent/internal/chat"
+	"aurora-k8s-agent/internal/chat/telegram/policy"
+	"aurora-k8s-agent/internal/chat/telegram/state"
 	chattimers "aurora-k8s-agent/internal/chat/timers"
-	"aurora-k8s-agent/internal/policy"
-	"aurora-k8s-agent/internal/state"
-	"aurora-k8s-agent/internal/telegram"
+	"aurora-k8s-agent/internal/transport/telegram"
 )
 
 type Service struct {

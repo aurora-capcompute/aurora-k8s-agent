@@ -1,4 +1,4 @@
-package slackstate
+package state
 
 import (
 	"context"

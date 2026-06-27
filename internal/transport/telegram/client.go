@@ -1,3 +1,8 @@
+// Package telegram is a small Telegram Bot API client: long-poll update
+// retrieval, message send/edit, and the inline-keyboard callbacks the chat
+// adapter needs, and nothing more. It owns the raw HTTP surface so the
+// chat/telegram adapter never deals with Bot API encoding directly — mirroring
+// the transport/slack posture for the sibling assembly.
 package telegram
 
 import (

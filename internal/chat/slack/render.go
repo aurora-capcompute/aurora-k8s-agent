@@ -1,4 +1,4 @@
-package slackbot
+package slack
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"aurora-capcompute/aurora"
-	"aurora-k8s-agent/internal/slack"
+	"aurora-k8s-agent/internal/transport/slack"
 )
 
 const (

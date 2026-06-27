@@ -1,11 +1,11 @@
-package bot
+package telegram
 
 import (
 	"strings"
 	"testing"
 
 	"aurora-capcompute/aurora"
-	"aurora-k8s-agent/internal/telegram"
+	"aurora-k8s-agent/internal/transport/telegram"
 )
 
 func TestRenderRunShowsAnswer(t *testing.T) {

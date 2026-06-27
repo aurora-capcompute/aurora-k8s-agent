@@ -10,17 +10,19 @@ import (
 	"aurora-capcompute/aurora"
 
 	"aurora-k8s-agent/internal/assembly"
-	"aurora-k8s-agent/internal/bot"
 	"aurora-k8s-agent/internal/controller"
 	"aurora-k8s-agent/internal/oci"
-	"aurora-k8s-agent/internal/policy"
-	slackclient "aurora-k8s-agent/internal/slack"
-	"aurora-k8s-agent/internal/slackbot"
-	"aurora-k8s-agent/internal/slackpolicy"
-	"aurora-k8s-agent/internal/slackstate"
 	"aurora-k8s-agent/internal/source"
-	"aurora-k8s-agent/internal/state"
-	"aurora-k8s-agent/internal/telegram"
+
+	tgchat "aurora-k8s-agent/internal/chat/telegram"
+	tgpolicy "aurora-k8s-agent/internal/chat/telegram/policy"
+	tgstate "aurora-k8s-agent/internal/chat/telegram/state"
+	tgapi "aurora-k8s-agent/internal/transport/telegram"
+
+	slchat "aurora-k8s-agent/internal/chat/slack"
+	slpolicy "aurora-k8s-agent/internal/chat/slack/policy"
+	slstate "aurora-k8s-agent/internal/chat/slack/state"
+	slapi "aurora-k8s-agent/internal/transport/slack"
 
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -82,15 +84,15 @@ func buildTelegram(
 	if err != nil {
 		return nil, nil, err
 	}
-	policies, err := policy.Load(cfg.PolicyPath, provider)
+	policies, err := tgpolicy.Load(cfg.PolicyPath, provider)
 	if err != nil {
 		return nil, nil, err
 	}
-	bridgeStore, err := state.Open(filepath.Join(cfg.DataDir, "telegram.db"), stateKey)
+	bridgeStore, err := tgstate.Open(filepath.Join(cfg.DataDir, "telegram.db"), stateKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open Telegram state: %w", err)
 	}
-	client := telegram.NewClient(token)
+	client := tgapi.NewClient(token)
 	if cfg.TelegramBaseURL != "" {
 		client.SetBaseURL(cfg.TelegramBaseURL)
 	}
@@ -99,7 +101,7 @@ func buildTelegram(
 		bridgeStore.Close()
 		return nil, nil, fmt.Errorf("validate Telegram bot token: %w", err)
 	}
-	service := bot.New(runtime, client, bridgeStore, policies, identity, logger)
+	service := tgchat.New(runtime, client, bridgeStore, policies, identity, logger)
 	return service, func() { bridgeStore.Close() }, nil
 }
 
@@ -119,19 +121,19 @@ func buildSlack(
 	if err != nil {
 		return nil, nil, err
 	}
-	policies, err := slackpolicy.Load(cfg.PolicyPath, provider)
+	policies, err := slpolicy.Load(cfg.PolicyPath, provider)
 	if err != nil {
 		return nil, nil, err
 	}
-	bridgeStore, err := slackstate.Open(filepath.Join(cfg.DataDir, "slack.db"), stateKey)
+	bridgeStore, err := slstate.Open(filepath.Join(cfg.DataDir, "slack.db"), stateKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open Slack state: %w", err)
 	}
-	client, err := slackclient.NewClient(appToken, botToken)
+	client, err := slapi.NewClient(appToken, botToken)
 	if err != nil {
 		bridgeStore.Close()
 		return nil, nil, err
 	}
-	service := slackbot.New(runtime, client, bridgeStore, policies, logger)
+	service := slchat.New(runtime, client, bridgeStore, policies, logger)
 	return service, func() { bridgeStore.Close() }, nil
 }

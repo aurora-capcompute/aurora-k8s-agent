@@ -1,4 +1,8 @@
-package slackstate
+// Package state is the Slack adapter's durable bridge state: an encrypted SQLite
+// store of the conversation-to-thread mapping and event-dedup claims, keyed by
+// Slack user and channel IDs. It owns persistence of what the adapter must
+// survive a restart; run and approval state live in the Aurora runtime.
+package state
 
 import (
 	"context"

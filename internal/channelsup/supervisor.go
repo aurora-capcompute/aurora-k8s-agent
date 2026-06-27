@@ -16,16 +16,18 @@ import (
 	"aurora-capcompute/aurora"
 
 	"aurora-k8s-agent/internal/binding"
-	"aurora-k8s-agent/internal/bot"
 	"aurora-k8s-agent/internal/controller"
-	"aurora-k8s-agent/internal/policy"
 	"aurora-k8s-agent/internal/secrets"
-	"aurora-k8s-agent/internal/slack"
-	"aurora-k8s-agent/internal/slackbot"
-	"aurora-k8s-agent/internal/slackpolicy"
-	"aurora-k8s-agent/internal/slackstate"
-	"aurora-k8s-agent/internal/state"
-	"aurora-k8s-agent/internal/telegram"
+
+	tgchat "aurora-k8s-agent/internal/chat/telegram"
+	tgpolicy "aurora-k8s-agent/internal/chat/telegram/policy"
+	tgstate "aurora-k8s-agent/internal/chat/telegram/state"
+	tgapi "aurora-k8s-agent/internal/transport/telegram"
+
+	slchat "aurora-k8s-agent/internal/chat/slack"
+	slpolicy "aurora-k8s-agent/internal/chat/slack/policy"
+	slstate "aurora-k8s-agent/internal/chat/slack/state"
+	slapi "aurora-k8s-agent/internal/transport/slack"
 )
 
 // Supervisor manages per-channel bridges from control-plane snapshots.
@@ -196,7 +198,7 @@ func (s *Supervisor) startChannel(key string, ch controller.ResolvedChannel, tok
 
 func (s *Supervisor) startTelegram(ch controller.ResolvedChannel, tokens map[string][]byte, hash string) (*managed, error) {
 	parent := s.parentCtx()
-	client := telegram.NewClient(string(tokens["botToken"]))
+	client := tgapi.NewClient(string(tokens["botToken"]))
 	if s.telegramBaseURL != "" {
 		client.SetBaseURL(s.telegramBaseURL)
 	}
@@ -204,23 +206,23 @@ func (s *Supervisor) startTelegram(ch controller.ResolvedChannel, tokens map[str
 	if err != nil {
 		return nil, err
 	}
-	store, err := state.Open(filepath.Join(s.dataDir, "telegram-"+ch.Name+".db"), s.stateKey)
+	store, err := tgstate.Open(filepath.Join(s.dataDir, "telegram-"+ch.Name+".db"), s.stateKey)
 	if err != nil {
 		return nil, err
 	}
-	policies, err := policy.FromResolved(ch.Bindings)
+	policies, err := tgpolicy.FromResolved(ch.Bindings)
 	if err != nil {
 		store.Close()
 		return nil, err
 	}
-	svc := bot.New(s.runtime, client, store, policies, identity, s.logger)
+	svc := tgchat.New(s.runtime, client, store, policies, identity, s.logger)
 	ctx, cancel := context.WithCancel(parent)
 	done := make(chan struct{})
 	go s.run(ctx, "telegram/"+ch.Name, svc, done)
 	return &managed{
 		tokenHash: hash, cancel: cancel, done: done, closeStore: store.Close,
 		setPolicies: func(b []binding.Resolved) {
-			if p, err := policy.FromResolved(b); err != nil {
+			if p, err := tgpolicy.FromResolved(b); err != nil {
 				s.logger.Warn("channel supervisor: reroute", "channel", "telegram/"+ch.Name, "error", err)
 			} else {
 				svc.SetPolicies(p)
@@ -231,27 +233,27 @@ func (s *Supervisor) startTelegram(ch controller.ResolvedChannel, tokens map[str
 
 func (s *Supervisor) startSlack(ch controller.ResolvedChannel, tokens map[string][]byte, hash string) (*managed, error) {
 	parent := s.parentCtx()
-	client, err := slack.NewClient(string(tokens["appToken"]), string(tokens["botToken"]))
+	client, err := slapi.NewClient(string(tokens["appToken"]), string(tokens["botToken"]))
 	if err != nil {
 		return nil, err
 	}
-	store, err := slackstate.Open(filepath.Join(s.dataDir, "slack-"+ch.Name+".db"), s.stateKey)
+	store, err := slstate.Open(filepath.Join(s.dataDir, "slack-"+ch.Name+".db"), s.stateKey)
 	if err != nil {
 		return nil, err
 	}
-	policies, err := slackpolicy.FromResolved(ch.Bindings)
+	policies, err := slpolicy.FromResolved(ch.Bindings)
 	if err != nil {
 		store.Close()
 		return nil, err
 	}
-	svc := slackbot.New(s.runtime, client, store, policies, s.logger)
+	svc := slchat.New(s.runtime, client, store, policies, s.logger)
 	ctx, cancel := context.WithCancel(parent)
 	done := make(chan struct{})
 	go s.run(ctx, "slack/"+ch.Name, svc, done)
 	return &managed{
 		tokenHash: hash, cancel: cancel, done: done, closeStore: store.Close,
 		setPolicies: func(b []binding.Resolved) {
-			if p, err := slackpolicy.FromResolved(b); err != nil {
+			if p, err := slpolicy.FromResolved(b); err != nil {
 				s.logger.Warn("channel supervisor: reroute", "channel", "slack/"+ch.Name, "error", err)
 			} else {
 				svc.SetPolicies(p)

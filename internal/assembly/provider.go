@@ -1,3 +1,9 @@
+// Package assembly wires this agent's concrete implementations into the
+// implementation-neutral aurora-capcompute runtime: it adapts the dispatcher
+// registry to the injected DispatcherProvider contract, supplies brain providers
+// (OCI-backed or empty), and guards Secret operations at the dispatch level. It
+// owns the choice of capabilities and brains this deployment exposes; the runtime
+// mechanics stay in aurora-capcompute.
 package assembly
 
 import (

@@ -1,7 +1,10 @@
-// Package bridge connects a Slack workspace to the Aurora runtime: it turns
-// Slack messages into agent runs, renders run/approval state back into Slack, and
-// resolves durable approval tasks from interactive buttons.
-package slackbot
+// Package slack is the Slack chat adapter: it connects a Slack workspace to the
+// Aurora runtime, turning Slack messages into agent runs, rendering run and
+// approval state back into Slack, and resolving durable approval tasks from
+// interactive buttons. It owns Slack-shaped presentation and command handling;
+// the raw Socket Mode/Web API client lives in transport/slack, and per-user
+// authorization in the policy subpackage.
+package slack
 
 import (
 	"context"
@@ -12,10 +15,10 @@ import (
 
 	"aurora-capcompute/aurora"
 	"aurora-k8s-agent/internal/chat"
+	"aurora-k8s-agent/internal/chat/slack/policy"
+	"aurora-k8s-agent/internal/chat/slack/state"
 	chattimers "aurora-k8s-agent/internal/chat/timers"
-	"aurora-k8s-agent/internal/slack"
-	policy "aurora-k8s-agent/internal/slackpolicy"
-	state "aurora-k8s-agent/internal/slackstate"
+	"aurora-k8s-agent/internal/transport/slack"
 )
 
 type Service struct {

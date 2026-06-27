@@ -1,7 +1,9 @@
 # AGENTS.md
 
-Aurora Kubernetes agent — Telegram-controlled, in-cluster AI agent for
-Kubernetes and Helm operations.
+Aurora Kubernetes agent — a chat-controlled (Telegram and Slack), in-cluster AI
+agent for Kubernetes and Helm operations. Runs are driven by a caller-supplied
+Wasm brain on the event-sourced `aurora-capcompute` runtime; the brain itself is
+decoupled, loaded at runtime from a Brain CRD or an OCI artifact, not embedded.
 
 ## Build and test
 
@@ -19,40 +21,43 @@ make docker       # docker build
 Dependencies are pinned as git submodules under `third_party/`.
 
 ```
-cmd/aurora-k8s-agent/   entry point; AURORA_SOURCES runs telegram and/or slack
-internal/assembly/      brain provider (embedded + OCI), dispatcher provider, Secret guard
-internal/oci/           pull brain artifacts (wasm + declaration) from OCI registries
-internal/brainspec/     brain manifest: declared capabilities (per-cap optional flag)
-internal/apis/          v1alpha1 control-plane types (Brain/FunctionInstance/Channel)
-internal/controller/    CRD informer + reconcile (pull brains, validate grants, bind)
-internal/binding/       named-manifest bindings (source × subject × scope)
-internal/source/        Source interface + concurrent multi-source runner
-internal/bot/           Telegram service (service/commands/callbacks/events/render)
-internal/policy/        per-user manifest and chat authorization (Telegram, int64 IDs)
-internal/state/         encrypted SQLite bridge state (Telegram)
-internal/telegram/      raw Telegram Bot API client
-internal/slackbot/      Slack service (service/commands/events/actions/render/timer)
-internal/slackpolicy/   per-user manifest and channel authorization (Slack, string IDs)
-internal/slackstate/    encrypted SQLite bridge state (Slack)
-internal/slack/         Slack Socket Mode + Web API client (slack-go)
-brain/                  TinyGo Wasm agent source
-charts/                 Helm chart
+cmd/aurora-k8s-agent/        entry point; config, source wiring, brain-pack/seal subcommands
+internal/assembly/           brain provider (OCI + empty), dispatcher provider, Secret guard
+internal/oci/                pull brain artifacts (wasm + declaration) from OCI registries
+internal/brainspec/          brain manifest: declared capabilities (per-cap optional flag)
+internal/apis/               v1alpha1 control-plane types (Brain, the typed
+                             Slack/Telegram/Web channels, ChannelBinding)
+internal/controller/         CRD informer + fs source; reconcile (pull brains, validate, bind)
+internal/binding/            named-manifest bindings (source × subject × scope)
+internal/source/             Source interface + concurrent multi-source runner
+internal/channelsup/         supervises live bridges, one per channel CRD
+internal/chat/               transport-agnostic chat core (subscriptions, timers, policy)
+internal/chat/telegram/      Telegram adapter; subpackages state (SQLite) + policy
+internal/chat/slack/         Slack adapter; subpackages state (SQLite) + policy
+internal/transport/telegram/ raw Telegram Bot API client
+internal/transport/slack/    Slack Socket Mode + Web API client (slack-go)
+internal/webapi/             HTTP + SSE API; internal/webchannel/ its channel registry
+internal/secrets/, secretbox/  encrypted secret resolution for channel credentials
+examples/brain/              TinyGo Wasm agent source (decoupled; not built into the binary)
+charts/                      Helm chart
 ```
 
 Each channel is a `source.Source` (`Kind()` + `Start(ctx)`); `cmd` builds the set
 named by `AURORA_SOURCES` and runs them concurrently against one runtime via
 `source.Run` (first failure cancels the rest). All sources share the runtime,
-`internal/assembly`, brain, and dispatchers; they differ only in transport,
-user/channel identifiers, and state. Adding a source means a transport client + a
-service mirroring `internal/bot` that implements `source.Source`, plus a branch in
-`cmd`. See `docs/rfc-sources-and-bindings.md` for the staged plan (named-manifest
-bindings, a Kubernetes-informer source, CRDs).
+`internal/assembly`, brains, and dispatchers; they differ only in transport,
+user/channel identifiers, and state. The chat layer is symmetric: an adapter under
+`chat/{telegram,slack}` turns messages into runs and renders state back, over a raw
+client under `transport/{telegram,slack}`. Adding a source means a transport client
+plus an adapter mirroring `internal/chat/telegram` that implements `source.Source`,
+plus a branch in `cmd`. See `docs/rfc-sources-and-bindings.md` for the staged plan
+(named-manifest bindings, a Kubernetes-informer source, CRDs).
 
 ## Conventions
 
 - Write simple Go. No frameworks. The one library dependency is `slack-go/slack`
   (Socket Mode envelopes/acks/reconnect are not worth hand-rolling); it is confined
-  to `internal/slack`, which the rest of the code never imports directly.
+  to `internal/transport/slack`, which the rest of the code never imports directly.
 - Secrets never appear in Aurora manifests — use `api_key_env` references.
 - The guarded dispatcher blocks Secret operations at the dispatch level.
 - Mutating capabilities should require explicit per-operation approval.

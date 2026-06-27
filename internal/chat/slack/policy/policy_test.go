@@ -1,4 +1,4 @@
-package slackpolicy
+package policy
 
 import (
 	"context"

@@ -1,6 +1,7 @@
 # aurora-k8s-agent
 
-Deployable Aurora assembly for operating Kubernetes and Helm through Telegram.
+Deployable Aurora assembly for operating Kubernetes and Helm through chat
+(Telegram and Slack).
 
 The agent combines:
 
@@ -180,9 +181,10 @@ policy:
 
 ### Brains as OCI artifacts
 
-The reasoning **brain** (a wasm module) can be pulled from an OCI registry instead
-of using the one embedded at build time. Set `AURORA_BRAINS` to a comma-separated
-list of references:
+The reasoning **brain** (a wasm module) is decoupled from the binary — it is never
+embedded at build time. Brains are loaded at runtime, either from OCI registries
+named at startup or from Brain CRDs supplied by the control plane. Set
+`AURORA_BRAINS` to a comma-separated list of references to load them up front:
 
 ```sh
 AURORA_BRAINS=ghcr.io/acme/brain-k8s:1.4,ghcr.io/acme/brain-ops:2.0
@@ -194,9 +196,9 @@ AURORA_REGISTRY_PASSWORD=…
 A brain artifact is an OCI image whose config blob is the brain's **declaration**
 (`{id, capabilities: [{name, optional}]}`) and whose wasm is a layer
 (`application/vnd.aurora.brain.wasm.v1+wasm`). The declared capability set is the
-superset a manifest is checked against. With `AURORA_BRAINS` unset, the embedded
-`kubernetes-agent` brain is used (unchanged). Brain bytes are pinned by digest, as
-before.
+superset a manifest is checked against. With `AURORA_BRAINS` unset, the agent boots
+with no brain and gains them at runtime from Brain CRDs, which the control plane
+hot-loads via `runtime.SetBrains`. Brain bytes are pinned by digest.
 
 ### Control plane (CRDs)
 
@@ -368,9 +370,9 @@ does not configure a task TTL, so timers up to `max_duration_ms` are safe.
 `headers_from_env` in each user's manifest. The API key itself remains in a
 Kubernetes Secret and is never persisted in an Aurora manifest.
 
-The cognition capability is dispatchable by the embedded brain but filtered
-from the operational tools shown to the model. Only the session's effective
-Kubernetes and Helm capabilities appear in its tool list.
+The cognition capability is dispatchable by the brain but filtered from the
+operational tools shown to the model. Only the session's effective Kubernetes
+and Helm capabilities appear in its tool list.
 
 ## Development
 
