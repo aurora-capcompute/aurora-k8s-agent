@@ -104,8 +104,8 @@ func run() error {
 	runtime, err := aurora.NewRuntime(ctx, aurora.Config{
 		Brains:       brains,
 		Dispatchers:  provider,
-		StateStore:   runtimeStore,
-		TaskStore:    runtimeStore,
+		Log:          runtimeStore,
+		Leases:       runtimeStore,
 		SessionStore: sessionStore,
 		TaskSecret:   []byte(taskSecret),
 		TenantID:     cfg.TenantID,
