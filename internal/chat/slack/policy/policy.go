@@ -1,6 +1,6 @@
-// Package slackpolicy is the Slack instantiation of the shared chat authorization
+// Package policy is the Slack instantiation of the shared chat authorization
 // set: subjects are Slack user IDs (U…) and scopes are channel IDs (C…/G…/D…).
-package slackpolicy
+package policy
 
 import (
 	"errors"

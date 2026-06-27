@@ -1,13 +1,13 @@
-package slackbot
+package slack
 
 import (
 	"context"
 	"encoding/json"
 
 	"aurora-capcompute/aurora"
+	"aurora-k8s-agent/internal/chat/slack/state"
 	chattimers "aurora-k8s-agent/internal/chat/timers"
-	"aurora-k8s-agent/internal/slack"
-	state "aurora-k8s-agent/internal/slackstate"
+	"aurora-k8s-agent/internal/transport/slack"
 )
 
 func (s *Service) handleEvent(ctx context.Context, conversation state.Conversation, event aurora.Event) {

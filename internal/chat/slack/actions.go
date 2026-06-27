@@ -1,11 +1,11 @@
-package slackbot
+package slack
 
 import (
 	"context"
 	"fmt"
 
 	"aurora-capcompute/aurora"
-	"aurora-k8s-agent/internal/slack"
+	"aurora-k8s-agent/internal/transport/slack"
 )
 
 // HandleAction implements slack.Handler for interactive button clicks.

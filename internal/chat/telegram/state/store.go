@@ -1,3 +1,7 @@
+// Package state is the Telegram adapter's durable bridge state: an encrypted
+// SQLite store of the conversation-to-thread mapping and the update inbox, keyed
+// by Telegram user and chat IDs. It owns persistence of what the adapter must
+// survive a restart; run and approval state live in the Aurora runtime.
 package state
 
 import (

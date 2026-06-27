@@ -1,13 +1,13 @@
-package slackbot
+package slack
 
 import (
 	"context"
 	"fmt"
 	"strings"
 
-	"aurora-k8s-agent/internal/slack"
-	policy "aurora-k8s-agent/internal/slackpolicy"
-	state "aurora-k8s-agent/internal/slackstate"
+	"aurora-k8s-agent/internal/chat/slack/policy"
+	"aurora-k8s-agent/internal/chat/slack/state"
+	"aurora-k8s-agent/internal/transport/slack"
 )
 
 // HandleSlash implements slack.Handler for the configured slash command

@@ -1,4 +1,4 @@
-package bot
+package telegram
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"aurora-capcompute/aurora"
-	"aurora-k8s-agent/internal/telegram"
+	"aurora-k8s-agent/internal/transport/telegram"
 )
 
 func renderRun(run aurora.RunSnapshot) (string, *telegram.InlineKeyboardMarkup) {

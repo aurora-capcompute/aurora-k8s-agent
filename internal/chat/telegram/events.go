@@ -1,12 +1,12 @@
-package bot
+package telegram
 
 import (
 	"context"
 
 	"aurora-capcompute/aurora"
+	"aurora-k8s-agent/internal/chat/telegram/state"
 	chattimers "aurora-k8s-agent/internal/chat/timers"
-	"aurora-k8s-agent/internal/state"
-	"aurora-k8s-agent/internal/telegram"
+	"aurora-k8s-agent/internal/transport/telegram"
 )
 
 func (s *Service) handleEvent(ctx context.Context, conversation state.Conversation, event aurora.Event) {
