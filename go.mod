@@ -9,7 +9,7 @@ require (
 	github.com/aurora-capcompute/aurora-dispatchers-k8s v0.0.0-20260627160311-911710992088
 	github.com/aurora-capcompute/aurora-dispatchers-llm v0.0.0-20260627160311-f3e7c7a3ea5f
 	github.com/aurora-capcompute/aurora-stores v0.0.0-20260627160311-4c01cddf149d
-	github.com/aurora-capcompute/capcompute v0.0.0-20260627182812-5c6fe58f1956
+	github.com/aurora-capcompute/capcompute v0.0.0-20260627192717-954ff0270676
 	github.com/extism/go-pdk v1.1.3
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/mattn/go-sqlite3 v1.14.46

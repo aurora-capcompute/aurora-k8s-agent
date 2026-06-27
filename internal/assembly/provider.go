@@ -72,11 +72,12 @@ func (d *guardedDispatcher) Dispatch(
 	ctx context.Context,
 	key aurora.RunContext,
 	call dispatcher.Call,
+	auth dispatcher.Authorization,
 ) (dispatcher.Outcome, error) {
 	if isKubernetesSecretCall(call) {
-		return dispatcher.Failed("native Kubernetes Secret operations are disabled"), nil
+		return dispatcher.Fail("native Kubernetes Secret operations are disabled"), nil
 	}
-	return d.next.Dispatch(ctx, key, call)
+	return d.next.Dispatch(ctx, key, call, auth)
 }
 
 func isKubernetesSecretCall(call dispatcher.Call) bool {
