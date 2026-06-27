@@ -20,7 +20,7 @@ build:
 
 helm-lint:
 	helm lint charts/aurora-k8s-agent
-	helm template aurora charts/aurora-k8s-agent --set image.repository=example/aurora-k8s-agent --set image.tag=test >/dev/null
+	helm template aurora charts/aurora-k8s-agent --set image.repository=example/aurora-k8s-agent --set image.tag=test --set secretName=aurora-secrets >/dev/null
 
 docker:
 	docker build -t aurora-k8s-agent:dev .

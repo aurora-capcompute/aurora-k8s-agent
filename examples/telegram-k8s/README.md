@@ -34,7 +34,6 @@ kubectl apply -f examples/telegram-k8s/secret.example.yaml
 helm install aurora charts/aurora-k8s-agent -n aurora \
   --set image.repository=ghcr.io/you/aurora-k8s-agent-k8sbrain \
   --set image.tag=latest \
-  --set controller.enabled=true \
   --set secretName=aurora-secrets
 ```
 

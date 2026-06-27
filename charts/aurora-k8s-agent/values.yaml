@@ -5,20 +5,9 @@ image:
 
 imagePullSecrets: []
 
-# Brains loaded at startup (sets AURORA_BRAINS). The agent embeds no brain: leave
-# this empty to boot brain-less and supply brains at runtime via Brain CRDs (with
-# controller.enabled), or list references here. A reference is a registry ref or
-# "oci-layout:<dir>:<tag>" for a registry-less on-disk layout baked into the image
-# (see examples/telegram-k8s). With no brain configured the agent stays healthy;
-# only brain runs wait until one is supplied.
-brains: []
-# brains:
-#   - ghcr.io/acme/brain-k8s:1.4
-#   - oci-layout:/brains/kubernetes-agent:latest
-brainDefault: ""        # brain id used when a manifest omits one; empty = first
-
-# Registry auth for pulling brains. The password is read from the Secret under
-# `passwordKey`.
+# Registry auth for pulling brains from private OCI registries. The password is
+# read from the Secret under `passwordKey`. Not needed when brains are baked into
+# the agent image as OCI layouts.
 registry:
   username: ""
   passwordKey: registry-password
@@ -30,23 +19,16 @@ registry:
 # inPlaceEncrypted token with `secret-key` from the Secret (see secretName).
 # Installs the CRDs and grants RBAC to watch them. Requires rbac.create.
 controller:
-  enabled: false
+  enabled: true
   namespace: ""         # watch scope; empty = all namespaces
 
-# Communication sources for the NO-control-plane path (controller.enabled=false):
-# the agent builds a single client per source from env tokens + the `policy`
-# below. With controller.enabled=true these are ignored — channels come from the
-# typed channel CRDs and the supervisor instead.
-# One or more of: telegram, slack — they run concurrently against the same
-# runtime (AURORA_SOURCES).
-# - telegram: secret must contain `telegram-bot-token`. Policy users are keyed by
-#   numeric Telegram user IDs with `allowed_chats`.
-# - slack: secret must contain `slack-app-token` (xapp-…, connections:write) and
-#   `slack-bot-token` (xoxb-…). Policy users are keyed by Slack user IDs (U…) with
-#   `allowed_channels`. Uses Slack Socket Mode (no public ingress).
-# Set to [] to run headless (no chat channel) — e.g. an API/UI-only deployment.
-channels:
-  - telegram
+# Communication channels for the legacy NO-control-plane path only
+# (controller.enabled=false). With controller.enabled=true (the default) this is
+# ignored: channels come from typed channel CRDs and the supervisor instead.
+# One or more of: telegram, slack. Set to [] for headless (API/UI-only).
+# - telegram: Secret must contain `telegram-bot-token`.
+# - slack: Secret must contain `slack-app-token` and `slack-bot-token`.
+channels: []
 
 serviceAccount:
   create: true
@@ -61,105 +43,11 @@ rbac:
   # Cluster-scoped access is deliberately disabled by default.
   clusterWide: false
 
-policy:
-  # Keys are Telegram numeric user IDs represented as strings.
-  users:
-    "123456789":
-      allowed_chats:
-        - 123456789
-      manifest:
-        version: 2
-        brain: kubernetes-agent
-        system_prompt: >-
-          You are Aurora, a Kubernetes operator. Inspect current state before
-          making changes. Summarize intended mutations. Never read Secrets.
-          Delegate read-only reconnaissance to your child brains when useful.
-        capabilities:
-          - name: openai.chat
-            hidden: true
-            settings:
-              base_url: https://api.openai.com/v1
-              api_key_env: OPENAI_API_KEY
-              default_model: gpt-5.5
-              allowed_models: [gpt-5.5]
-              require_approval: false
-          - name: k8s.get
-            settings: {namespaces: [default]}
-          - name: k8s.list
-            settings: {namespaces: [default]}
-          - name: k8s.logs
-            settings: {namespaces: [default]}
-          - name: k8s.events
-            settings: {namespaces: [default]}
-          - name: k8s.apply
-            settings: {namespaces: [default], require_approval: true}
-          - name: k8s.delete
-            settings: {namespaces: [default], require_approval: true}
-          - name: helm.list
-            settings: {namespaces: [default]}
-          - name: helm.status
-            settings: {namespaces: [default]}
-          - name: helm.get_values
-            settings: {namespaces: [default]}
-          - name: helm.upgrade
-            settings: {namespaces: [default], require_approval: true}
-          - name: helm.uninstall
-            settings: {namespaces: [default], require_approval: true}
-          - name: timer.set
-            # Pause the run for a relative duration and resume when it fires.
-            settings: {max_duration_ms: 86400000}
-        children:
-          - name: k8s-scout
-            brain: kubernetes-agent
-            system_prompt: >-
-              You are a Kubernetes read-only scout. Gather information about
-              resources, pods, logs, and events. Report findings concisely.
-              Do not attempt mutations.
-            capabilities:
-              - name: openai.chat
-                hidden: true
-                settings:
-                  base_url: https://api.openai.com/v1
-                  api_key_env: OPENAI_API_KEY
-                  default_model: gpt-5.5
-                  allowed_models: [gpt-5.5]
-              - name: k8s.get
-                settings: {namespaces: [default]}
-              - name: k8s.list
-                settings: {namespaces: [default]}
-              - name: k8s.logs
-                settings: {namespaces: [default]}
-              - name: k8s.events
-                settings: {namespaces: [default]}
-          - name: helm-scout
-            brain: kubernetes-agent
-            system_prompt: >-
-              You are a Helm read-only scout. List releases, check statuses,
-              and inspect values. Report findings concisely. Do not install,
-              upgrade, or uninstall releases.
-            capabilities:
-              - name: openai.chat
-                hidden: true
-                settings:
-                  base_url: https://api.openai.com/v1
-                  api_key_env: OPENAI_API_KEY
-                  default_model: gpt-5.5
-                  allowed_models: [gpt-5.5]
-              - name: helm.list
-                settings: {namespaces: [default]}
-              - name: helm.status
-                settings: {namespaces: [default]}
-              - name: helm.get_values
-                settings: {namespaces: [default]}
-
 # Secret must contain: task-secret, state-key, the LLM API key under the key
-# named by llmSecretKey, and — for the no-control-plane path — telegram-bot-token
-# / slack-app-token / slack-bot-token for the configured channels.
-# When controller.enabled, it must also contain `secret-key`: the key that
-# decrypts channel `inPlaceEncrypted` credentials. Seal a channel token with the
-# same key via `aurora-k8s-agent seal-secret`:
-#   printf %s "$TOKEN" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
-# If `secret-key` is absent the agent still runs but starts no channel bridges.
+# named by llmSecretKey, and `secret-key` (the key that decrypts channel
+# `inPlaceEncrypted` credentials — seal a channel token with the same key via
+# `aurora-k8s-agent seal-secret`). Without `secret-key` the agent runs but
+# starts no channel bridges.
 secretName: ""
 llmSecretKey: openai-api-key
 llmEnvVar: OPENAI_API_KEY

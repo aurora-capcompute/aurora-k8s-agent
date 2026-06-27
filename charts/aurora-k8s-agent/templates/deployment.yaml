@@ -19,7 +19,6 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        checksum/policy: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -38,8 +37,6 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:
-            - name: AURORA_POLICY_PATH
-              value: /etc/aurora/policy.json
             - name: AURORA_DATA_DIR
               value: /data
             - name: AURORA_INSTANCE_ID
@@ -57,14 +54,6 @@ spec:
               value: /var/run/aurora-secrets/slack-app-token
             - name: SLACK_BOT_TOKEN_FILE
               value: /var/run/aurora-secrets/slack-bot-token
-            {{- end }}
-            {{- if .Values.brains }}
-            - name: AURORA_BRAINS
-              value: {{ join "," .Values.brains | quote }}
-            {{- if .Values.brainDefault }}
-            - name: AURORA_BRAIN_DEFAULT
-              value: {{ .Values.brainDefault | quote }}
-            {{- end }}
             {{- end }}
             {{- if .Values.registry.username }}
             - name: AURORA_REGISTRY_USERNAME
@@ -123,9 +112,6 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            - name: policy
-              mountPath: /etc/aurora
-              readOnly: true
             - name: secrets
               mountPath: /var/run/aurora-secrets
               readOnly: true
@@ -134,9 +120,6 @@ spec:
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: policy
-          configMap:
-            name: {{ .Release.Name }}
         - name: secrets
           secret:
             secretName: {{ include "aurora-k8s-agent.secretName" . }}

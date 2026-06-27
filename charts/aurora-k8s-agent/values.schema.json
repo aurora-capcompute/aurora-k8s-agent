@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["image", "policy", "rbac", "secretName"],
+  "required": ["image", "rbac"],
   "properties": {
     "image": {
       "type": "object",
@@ -26,29 +26,6 @@
         "clusterWide": {"type": "boolean"}
       }
     },
-    "policy": {
-      "type": "object",
-      "required": ["users"],
-      "properties": {
-        "users": {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["allowed_chats", "manifest"],
-            "properties": {
-              "allowed_chats": {
-                "type": "array",
-                "minItems": 1,
-                "items": {"type": "integer"}
-              },
-              "manifest": {"type": "object"}
-            }
-          }
-        }
-      }
-    },
-    "secretName": {"type": "string", "minLength": 1}
+    "secretName": {"type": "string"}
   }
 }
