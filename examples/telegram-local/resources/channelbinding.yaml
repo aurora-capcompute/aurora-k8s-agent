@@ -1,8 +1,12 @@
 # The binding satisfies the brain's interface with one flat grant and wires the
 # brain to the channel. `allowed` is the ceiling: every required brain capability
-# (openai.chat) must appear, and the operational tools are scoped here. The LLM
-# key is read at runtime from the env var named by api_key_env (OPENAI_API_KEY);
-# no placeholder substitution is needed in this file.
+# (openai.chat) must appear, and the operational tools are scoped here.
+#
+# The LLM key can be supplied two ways:
+#   A) Set it in spec.secrets (encrypted in this CRD, injected as an env var at
+#      bridge startup). Seal: printf %s "$KEY" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
+#   B) Set OPENAI_API_KEY in the environment directly (e.g. via .env or Docker).
+# The local example uses option B — no spec.secrets block is needed.
 apiVersion: aurora.dev/v1alpha1
 kind: ChannelBinding
 metadata:

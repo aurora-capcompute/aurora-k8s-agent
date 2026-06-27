@@ -167,6 +167,23 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 			continue
 		}
 
+		secretsOK := true
+		for secretName, src := range bnd.Spec.Secrets {
+			if err := validateEnvVarName(secretName); err != nil {
+				res.BindingStatus[bnd.Name] = bindingNotReady("secret name %q: %v", secretName, err)
+				secretsOK = false
+				break
+			}
+			if err := validateSecret(secretName, src); err != nil {
+				res.BindingStatus[bnd.Name] = bindingNotReady("secret %q: %v", secretName, err)
+				secretsOK = false
+				break
+			}
+		}
+		if !secretsOK {
+			continue
+		}
+
 		manifest, err := assembly.BuildManifest(brain.decl, brain.decl.ID, bnd.Spec.SystemPrompt, toCapabilities(bnd.Spec.Allowed), provider)
 		if err != nil {
 			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
@@ -187,6 +204,7 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 			Scopes:   append([]string(nil), channel.scopes...),
 			Manifest: validated,
 			Digest:   digest(validated),
+			Secrets:  bnd.Spec.Secrets,
 		}
 		res.Bindings = append(res.Bindings, SourceBinding{Source: channel.source, Name: bnd.Name, Resolved: resolved})
 		channel.bindings = append(channel.bindings, resolved)
@@ -294,6 +312,27 @@ func resolveChannels(in Inputs, out map[string]*resolvedChannel, status map[stri
 		}
 		status[key] = v1alpha1.ChannelStatus{Ready: true}
 	}
+}
+
+func validateEnvVarName(name string) error {
+	if len(name) == 0 {
+		return fmt.Errorf("env var name must not be empty")
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c == '_':
+		case c >= 'A' && c <= 'Z':
+		case c >= 'a' && c <= 'z':
+		case i > 0 && c >= '0' && c <= '9':
+		default:
+			if i == 0 {
+				return fmt.Errorf("must start with a letter or underscore, got %q", name)
+			}
+			return fmt.Errorf("must contain only letters, digits, and underscores, got %q", name)
+		}
+	}
+	return nil
 }
 
 func validateSecret(field string, src v1alpha1.SecretSource) error {

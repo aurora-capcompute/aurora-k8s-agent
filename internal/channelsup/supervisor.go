@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -131,6 +132,7 @@ func (s *Supervisor) reconcile(res controller.Resolved) {
 			s.logger.Warn("channel supervisor: resolve secret", "channel", key, "error", err)
 			continue
 		}
+		s.injectBindingSecrets(key, ch.Bindings)
 		s.mu.Lock()
 		current, ok := s.running[key]
 		s.mu.Unlock()
@@ -155,6 +157,27 @@ func (s *Supervisor) reconcile(res controller.Resolved) {
 	s.mu.Unlock()
 	for _, key := range stale {
 		s.stop(key, false)
+	}
+}
+
+// injectBindingSecrets resolves each binding's Secrets and injects them into
+// the process environment so capability dispatchers can read them by name.
+// The secret map key is used verbatim as the env var name (e.g. "OPENAI_API_KEY").
+// Called before bridge start and on hot-swaps. Dispatcher clients cache their
+// HTTP connections at bridge startup (keyed by env var name, not value), so
+// secret rotation requires a bridge restart to take effect.
+func (s *Supervisor) injectBindingSecrets(channel string, bindings []binding.Resolved) {
+	for _, b := range bindings {
+		for name, src := range b.Secrets {
+			val, err := s.resolver.Resolve(src)
+			if err != nil {
+				s.logger.Warn("channel supervisor: resolve binding secret", "channel", channel, "secret", name, "error", err)
+				continue
+			}
+			if err := os.Setenv(name, string(val)); err != nil {
+				s.logger.Warn("channel supervisor: inject binding secret", "channel", channel, "secret", name, "error", err)
+			}
+		}
 	}
 }
 

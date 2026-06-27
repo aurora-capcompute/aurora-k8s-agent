@@ -37,12 +37,18 @@ helm install aurora charts/aurora-k8s-agent -n aurora \
   --set secretName=aurora-secrets
 ```
 
-## 3. Seal the bot token and apply the resources
+## 3. Seal secrets and apply the resources
 
 ```sh
-printf %s "$TELEGRAM_BOT_TOKEN" | \
-  AURORA_SECRET_KEY=<secret-key from the Secret> aurora-k8s-agent seal-secret
-# paste into telegramchannel.yaml, set your user/chat ids, then:
+KEY=<secret-key from the Secret>
+
+# Seal the Telegram bot token → paste into telegramchannel.yaml
+printf %s "$TELEGRAM_BOT_TOKEN" | AURORA_SECRET_KEY=$KEY aurora-k8s-agent seal-secret
+
+# Seal the OpenAI API key → paste into channelbinding.yaml spec.secrets.OPENAI_API_KEY.ciphertext
+printf %s "$OPENAI_API_KEY" | AURORA_SECRET_KEY=$KEY aurora-k8s-agent seal-secret
+
+# Set user/chat IDs in telegramchannel.yaml, then apply:
 kubectl apply -n aurora -f examples/telegram-k8s/brain.yaml \
   -f examples/telegram-k8s/telegramchannel.yaml \
   -f examples/telegram-k8s/channelbinding.yaml
@@ -50,5 +56,6 @@ kubectl apply -n aurora -f examples/telegram-k8s/brain.yaml \
 
 The controller pulls the brain from `oci-layout:/brains/kubernetes-agent:latest`,
 registers it via `runtime.SetBrains`, and the supervisor opens the Telegram
-bridge. The agent stays healthy from the moment it starts — the brain simply
-becomes available once the `Brain` resource reconciles.
+bridge. Both the Telegram bot token and the OpenAI API key are encrypted at rest
+in their respective CRDs and resolved at bridge startup — neither appears in
+environment variables or Kubernetes Secrets.

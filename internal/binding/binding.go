@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
 )
 
 // Version is the schema version of the bindings format.
@@ -37,12 +39,15 @@ type Binding struct {
 }
 
 // Resolved is one validated binding for a single source: the subjects and scopes
-// it grants, plus the resolved manifest and its digest.
+// it grants, plus the resolved manifest, its digest, and any unresolved
+// credential sources that the channel supervisor will inject as env vars at
+// bridge start time.
 type Resolved struct {
 	Users    []string
 	Scopes   []string
 	Manifest aurora.Manifest
 	Digest   string
+	Secrets  map[string]v1alpha1.SecretSource
 }
 
 // IsBindingFormat reports whether raw uses the named-manifest bindings format

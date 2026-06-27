@@ -131,11 +131,18 @@ type ChannelRef struct {
 // Allowed is the single flat combined grant for the whole brain tree: every
 // capability the tree requires must be present, scoped no wider than the brain
 // declares.
+//
+// Secrets holds encrypted credentials for this binding. Each key becomes the
+// env var name the agent sets at bridge startup (e.g. key "OPENAI_API_KEY"
+// becomes os.Setenv("OPENAI_API_KEY", resolvedPlaintext)). Capability settings
+// in Allowed can reference these env vars by name — e.g. api_key_env:
+// OPENAI_API_KEY — so the plaintext never appears in the stored manifest.
 type ChannelBindingSpec struct {
-	BrainRef     string       `json:"brainRef"`
-	ChannelRef   ChannelRef   `json:"channelRef"`
-	SystemPrompt string       `json:"systemPrompt,omitempty"`
-	Allowed      []Capability `json:"allowed"`
+	BrainRef     string                 `json:"brainRef"`
+	ChannelRef   ChannelRef             `json:"channelRef"`
+	SystemPrompt string                 `json:"systemPrompt,omitempty"`
+	Allowed      []Capability           `json:"allowed"`
+	Secrets      map[string]SecretSource `json:"secrets,omitempty"`
 }
 
 // ChannelBindingStatus reports validation state.

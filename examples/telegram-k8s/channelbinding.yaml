@@ -1,6 +1,12 @@
 # Satisfies the brain's interface with one flat grant and wires it to the channel.
-# The LLM key is read from the env var named by api_key_env; the chart sets
-# OPENAI_API_KEY from the agent Secret (llmSecretKey/llmEnvVar).
+#
+# Option A (used here): store the OpenAI key encrypted in this CRD under
+# spec.secrets. The agent resolves and injects it as the named env var at
+# bridge startup. Seal with:
+#   printf %s "$OPENAI_API_KEY" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
+#
+# Option B: omit spec.secrets and set OPENAI_API_KEY from a Kubernetes Secret
+# via the chart's llmSecretKey/llmEnvVar values instead.
 apiVersion: aurora.dev/v1alpha1
 kind: ChannelBinding
 metadata:
@@ -13,11 +19,15 @@ spec:
   systemPrompt: >-
     You are Aurora, a Kubernetes operator. Inspect current state before making
     changes, summarize intended mutations, and never read Secrets.
+  secrets:
+    OPENAI_API_KEY:
+      type: inPlaceEncrypted
+      ciphertext: ""   # paste output of: printf %s "$OPENAI_API_KEY" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
   allowed:
     - name: openai.chat
       settings:
         base_url: https://api.openai.com/v1
-        api_key_env: OPENAI_API_KEY
+        api_key_env: OPENAI_API_KEY   # resolved from spec.secrets above
         default_model: gpt-5.5
         allowed_models: [gpt-5.5]
         require_approval: false

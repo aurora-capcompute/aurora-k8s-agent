@@ -263,3 +263,109 @@ func TestReconcileIsolatesFailures(t *testing.T) {
 		t.Fatal("the good binding should still resolve despite sibling failures")
 	}
 }
+
+func bindWithSecrets(name, brainRef, chanKind, chanName string, secrets map[string]v1alpha1.SecretSource, allowed ...string) NamedBinding {
+	nb := bind(name, brainRef, chanKind, chanName, allowed...)
+	nb.Spec.Secrets = secrets
+	return nb
+}
+
+func TestReconcileBindingSecretValid(t *testing.T) {
+	puller := fakePuller{byRef: map[string]oci.Artifact{
+		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+	}}
+	secrets := map[string]v1alpha1.SecretSource{
+		"OPENAI_API_KEY": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: "AAAA"},
+	}
+	in := Inputs{
+		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
+		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
+		Bindings:         []NamedBinding{bindWithSecrets("ops-tg", "ops", v1alpha1.KindTelegramChannel, "tg", secrets, "k8s.get")},
+	}
+	res := Reconcile(context.Background(), in, puller, testProvider{})
+	if !res.BindingStatus["ops-tg"].Ready {
+		t.Fatalf("binding with valid secret should be Ready: %+v", res.BindingStatus["ops-tg"])
+	}
+	if len(res.Bindings) != 1 {
+		t.Fatalf("expected 1 resolved binding, got %d", len(res.Bindings))
+	}
+	got := res.Bindings[0].Secrets
+	if len(got) != 1 || got["OPENAI_API_KEY"].Type != v1alpha1.SecretInPlaceEncrypted {
+		t.Fatalf("secrets not carried through to resolved binding: %+v", got)
+	}
+}
+
+func TestReconcileBindingSecretInvalidSource(t *testing.T) {
+	// Empty ciphertext for inPlaceEncrypted should cause not-ready, not a panic.
+	puller := fakePuller{byRef: map[string]oci.Artifact{
+		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+	}}
+	secrets := map[string]v1alpha1.SecretSource{
+		"OPENAI_API_KEY": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: ""},
+	}
+	in := Inputs{
+		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
+		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
+		Bindings:         []NamedBinding{bindWithSecrets("bad", "ops", v1alpha1.KindTelegramChannel, "tg", secrets, "k8s.get")},
+	}
+	res := Reconcile(context.Background(), in, puller, testProvider{})
+	if res.BindingStatus["bad"].Ready {
+		t.Fatal("binding with empty ciphertext should not be Ready")
+	}
+	if res.BindingStatus["bad"].Message == "" {
+		t.Fatal("not-ready binding should carry a message")
+	}
+	if len(res.Bindings) != 0 {
+		t.Fatal("no resolved binding should be produced for a bad secret")
+	}
+}
+
+func TestReconcileBindingSecretBadName(t *testing.T) {
+	// A secret key that is not a valid env var name should cause not-ready.
+	puller := fakePuller{byRef: map[string]oci.Artifact{
+		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+	}}
+	secrets := map[string]v1alpha1.SecretSource{
+		"bad-key": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: "AAAA"},
+	}
+	in := Inputs{
+		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
+		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
+		Bindings:         []NamedBinding{bindWithSecrets("bad", "ops", v1alpha1.KindTelegramChannel, "tg", secrets, "k8s.get")},
+	}
+	res := Reconcile(context.Background(), in, puller, testProvider{})
+	if res.BindingStatus["bad"].Ready {
+		t.Fatal("binding with invalid env var name should not be Ready")
+	}
+	if res.BindingStatus["bad"].Message == "" {
+		t.Fatal("not-ready binding should carry a message")
+	}
+}
+
+func TestReconcileBindingSecretDoesNotBlockSiblings(t *testing.T) {
+	// A binding with a bad secret must not block a sibling good binding.
+	puller := fakePuller{byRef: map[string]oci.Artifact{
+		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+	}}
+	badSecrets := map[string]v1alpha1.SecretSource{
+		"OPENAI_API_KEY": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: ""},
+	}
+	in := Inputs{
+		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
+		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
+		Bindings: []NamedBinding{
+			bindWithSecrets("bad", "ops", v1alpha1.KindTelegramChannel, "tg", badSecrets, "k8s.get"),
+			bind("good", "ops", v1alpha1.KindTelegramChannel, "tg", "k8s.get"),
+		},
+	}
+	res := Reconcile(context.Background(), in, puller, testProvider{})
+	if res.BindingStatus["bad"].Ready {
+		t.Fatal("binding with bad secret should not be Ready")
+	}
+	if !res.BindingStatus["good"].Ready {
+		t.Fatalf("good sibling binding should still be Ready: %+v", res.BindingStatus["good"])
+	}
+	if len(res.Bindings) != 1 || res.Bindings[0].Name != "good" {
+		t.Fatalf("only the good binding should be resolved: %+v", res.Bindings)
+	}
+}
