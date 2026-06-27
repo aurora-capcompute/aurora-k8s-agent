@@ -18,7 +18,7 @@ make docker       # docker build
 
 ## Module layout
 
-Dependencies are pinned as git submodules under `third_party/`.
+Dependencies are resolved via the `go.work` workspace at the repository root.
 
 ```
 cmd/aurora-k8s-agent/        entry point; config, source wiring, brain-pack/seal subcommands
