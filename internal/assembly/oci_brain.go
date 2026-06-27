@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
-	"aurora-k8s-agent/internal/brainspec"
-	"aurora-k8s-agent/internal/oci"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/brainspec"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 )
 
 // OCIBrainProvider loads brains from OCI artifacts at startup and serves them

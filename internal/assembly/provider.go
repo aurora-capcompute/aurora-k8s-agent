@@ -11,10 +11,10 @@ import (
 	"encoding/json"
 	"strings"
 
-	"aurora-capcompute/aurora"
-	"aurora-dispatchers/builtin"
-	"aurora-dispatchers/registry"
-	"capcompute/dispatcher"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-dispatchers/builtin"
+	"github.com/aurora-capcompute/aurora-dispatchers/registry"
+	"github.com/aurora-capcompute/capcompute/dispatcher"
 )
 
 // Provider adapts the dispatcher registry to aurora-capcompute's injected
@@ -57,18 +57,15 @@ func (p *Provider) NewDispatcher(
 		return nil, err
 	}
 	base := builtin.New[aurora.RunContext](config)
-	return &guardedDispatcher{
-		next: base, capabilities: append([]dispatcher.Capability(nil), config.Capabilities...),
-	}, nil
+	return &guardedDispatcher{next: base}, nil
 }
 
 type guardedDispatcher struct {
-	next         dispatcher.Dispatcher[aurora.RunContext]
-	capabilities []dispatcher.Capability
+	next dispatcher.Dispatcher[aurora.RunContext]
 }
 
 func (d *guardedDispatcher) Capabilities() []dispatcher.Capability {
-	return append([]dispatcher.Capability(nil), d.capabilities...)
+	return d.next.Capabilities()
 }
 
 func (d *guardedDispatcher) Dispatch(

@@ -9,8 +9,8 @@ import (
 	"errors"
 	"fmt"
 
-	"aurora-k8s-agent/internal/apis/aurora/v1alpha1"
-	"aurora-k8s-agent/internal/secretbox"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/secretbox"
 )
 
 // ErrUnsupportedVariant reports a SecretSource variant this resolver cannot

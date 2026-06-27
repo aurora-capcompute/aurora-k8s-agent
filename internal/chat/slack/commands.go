@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"aurora-k8s-agent/internal/chat/slack/policy"
-	"aurora-k8s-agent/internal/chat/slack/state"
-	"aurora-k8s-agent/internal/transport/slack"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/slack/policy"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/slack/state"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/slack"
 )
 
 // HandleSlash implements slack.Handler for the configured slash command

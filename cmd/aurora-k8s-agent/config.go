@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"aurora-capcompute/aurora"
-	"aurora-dispatchers/mcp"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-dispatchers/mcp"
 
-	"aurora-k8s-agent/internal/oci"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 )
 
 // Config is the agent's runtime configuration, parsed once from the environment

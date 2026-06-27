@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"strings"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 )
 
 // Version is the schema version of the bindings format.

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"capcompute/dispatcher"
+	"github.com/aurora-capcompute/capcompute/dispatcher"
 )
 
 func TestKubernetesSecretCallsAreBlocked(t *testing.T) {

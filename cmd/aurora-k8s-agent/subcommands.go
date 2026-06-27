@@ -9,9 +9,9 @@ import (
 	"io"
 	"os"
 
-	"aurora-k8s-agent/internal/brainspec"
-	"aurora-k8s-agent/internal/oci"
-	"aurora-k8s-agent/internal/secretbox"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/brainspec"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/secretbox"
 )
 
 // sealSecret reads a plaintext credential from stdin and prints the base64

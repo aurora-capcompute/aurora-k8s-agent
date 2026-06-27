@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"aurora-k8s-agent/internal/brainspec"
-	"aurora-k8s-agent/internal/oci"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/brainspec"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 )
 
 type fakePuller struct {

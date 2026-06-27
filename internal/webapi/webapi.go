@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
-	"aurora-k8s-agent/internal/webchannel"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/webchannel"
 )
 
 // Handler builds an http.Handler exposing the agent API under /api. channel may

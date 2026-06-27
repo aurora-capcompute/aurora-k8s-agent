@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"testing"
 
-	"aurora-capcompute/aurora"
-	"capcompute/dispatcher"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/capcompute/dispatcher"
 
-	"aurora-k8s-agent/internal/brainspec"
-	"aurora-k8s-agent/internal/oci"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/brainspec"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 )
 
 // nsProvider implements aurora.DispatcherProvider with a namespace-subset rule,

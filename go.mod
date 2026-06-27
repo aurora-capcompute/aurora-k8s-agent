@@ -1,15 +1,15 @@
-module aurora-k8s-agent
+module github.com/aurora-capcompute/aurora-k8s-agent
 
 go 1.26
 
 require (
-	aurora-capcompute v0.0.0
-	aurora-dispatchers v0.0.0
-	aurora-dispatchers-helm v0.0.0
-	aurora-dispatchers-k8s v0.0.0
-	aurora-dispatchers-llm v0.0.0
-	aurora-stores v0.0.0
-	capcompute v0.0.0
+	github.com/aurora-capcompute/aurora-capcompute v0.0.0-00010101000000-000000000000
+	github.com/aurora-capcompute/aurora-dispatchers v0.0.0-00010101000000-000000000000
+	github.com/aurora-capcompute/aurora-dispatchers-helm v0.0.0-00010101000000-000000000000
+	github.com/aurora-capcompute/aurora-dispatchers-k8s v0.0.0-00010101000000-000000000000
+	github.com/aurora-capcompute/aurora-dispatchers-llm v0.0.0-00010101000000-000000000000
+	github.com/aurora-capcompute/aurora-stores v0.0.0-00010101000000-000000000000
+	github.com/aurora-capcompute/capcompute v0.0.0-00010101000000-000000000000
 	github.com/extism/go-pdk v1.1.3
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/mattn/go-sqlite3 v1.14.46
@@ -76,16 +76,9 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace aurora-capcompute => ./third_party/aurora-capcompute
 
-replace aurora-dispatchers => ./third_party/aurora-dispatchers
 
-replace aurora-dispatchers-helm => ./third_party/aurora-dispatchers-helm
 
-replace aurora-dispatchers-k8s => ./third_party/aurora-dispatchers-k8s
 
-replace aurora-dispatchers-llm => ./third_party/aurora-dispatchers-llm
 
-replace aurora-stores => ./third_party/aurora-stores
 
-replace capcompute => ./third_party/capcompute

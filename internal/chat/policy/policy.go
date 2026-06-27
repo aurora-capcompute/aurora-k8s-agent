@@ -14,9 +14,9 @@ import (
 	"fmt"
 	"os"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
-	"aurora-k8s-agent/internal/binding"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/binding"
 )
 
 // Config carries the platform-specific bits the generic parser needs.

@@ -9,9 +9,9 @@ import (
 	"sort"
 	"sync"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
-	"aurora-k8s-agent/internal/controller"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/controller"
 )
 
 // ManifestInfo describes a manifest bound to the web channel, for the UI switcher.

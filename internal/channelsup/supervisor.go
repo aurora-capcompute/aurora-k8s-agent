@@ -13,21 +13,21 @@ import (
 	"path/filepath"
 	"sync"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
-	"aurora-k8s-agent/internal/binding"
-	"aurora-k8s-agent/internal/controller"
-	"aurora-k8s-agent/internal/secrets"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/binding"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/controller"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/secrets"
 
-	tgchat "aurora-k8s-agent/internal/chat/telegram"
-	tgpolicy "aurora-k8s-agent/internal/chat/telegram/policy"
-	tgstate "aurora-k8s-agent/internal/chat/telegram/state"
-	tgapi "aurora-k8s-agent/internal/transport/telegram"
+	tgchat "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/telegram"
+	tgpolicy "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/telegram/policy"
+	tgstate "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/telegram/state"
+	tgapi "github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/telegram"
 
-	slchat "aurora-k8s-agent/internal/chat/slack"
-	slpolicy "aurora-k8s-agent/internal/chat/slack/policy"
-	slstate "aurora-k8s-agent/internal/chat/slack/state"
-	slapi "aurora-k8s-agent/internal/transport/slack"
+	slchat "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/slack"
+	slpolicy "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/slack/policy"
+	slstate "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/slack/state"
+	slapi "github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/slack"
 )
 
 // Supervisor manages per-channel bridges from control-plane snapshots.

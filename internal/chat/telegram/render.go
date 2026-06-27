@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"aurora-capcompute/aurora"
-	"aurora-k8s-agent/internal/transport/telegram"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/telegram"
 )
 
 func renderRun(run aurora.RunSnapshot) (string, *telegram.InlineKeyboardMarkup) {

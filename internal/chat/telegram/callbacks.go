@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"aurora-capcompute/aurora"
-	"aurora-k8s-agent/internal/transport/telegram"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/telegram"
 )
 
 func (s *Service) handleCallback(ctx context.Context, query *telegram.CallbackQuery) (resultErr error) {

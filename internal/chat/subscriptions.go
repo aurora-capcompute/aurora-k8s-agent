@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 )
 
 // Subscriber is the slice of the runtime the subscription set needs.

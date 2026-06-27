@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"aurora-capcompute/aurora"
-	"aurora-k8s-agent/internal/transport/slack"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/slack"
 )
 
 const (

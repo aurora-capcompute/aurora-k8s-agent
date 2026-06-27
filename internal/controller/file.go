@@ -14,10 +14,10 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"aurora-k8s-agent/internal/apis/aurora/v1alpha1"
-	"aurora-k8s-agent/internal/oci"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 )

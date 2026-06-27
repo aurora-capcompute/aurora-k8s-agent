@@ -13,12 +13,12 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"aurora-capcompute/aurora"
-	"aurora-k8s-agent/internal/chat"
-	"aurora-k8s-agent/internal/chat/slack/policy"
-	"aurora-k8s-agent/internal/chat/slack/state"
-	chattimers "aurora-k8s-agent/internal/chat/timers"
-	"aurora-k8s-agent/internal/transport/slack"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/chat"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/slack/policy"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/slack/state"
+	chattimers "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/timers"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/slack"
 )
 
 type Service struct {

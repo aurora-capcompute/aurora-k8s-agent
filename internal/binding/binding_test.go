@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"aurora-capcompute/aurora"
-	"capcompute/dispatcher"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/capcompute/dispatcher"
 )
 
 type testProvider struct{}

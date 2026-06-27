@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
-	"aurora-k8s-agent/internal/binding"
-	"aurora-k8s-agent/internal/controller"
-	"aurora-k8s-agent/internal/webapi"
-	"aurora-k8s-agent/internal/webchannel"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/binding"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/controller"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/webapi"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/webchannel"
 )
 
 // fakeRuntime embeds aurora.Runtime so it satisfies the interface; only the

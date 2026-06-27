@@ -3,7 +3,7 @@ package assembly
 import (
 	"context"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 )
 
 // EmptyProvider is a brain provider with no brains. The agent boots with it when

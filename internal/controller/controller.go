@@ -15,10 +15,10 @@ import (
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/tools/cache"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
-	"aurora-k8s-agent/internal/apis/aurora/v1alpha1"
-	"aurora-k8s-agent/internal/oci"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 )
 
 // GroupVersionResources for the control-plane kinds.

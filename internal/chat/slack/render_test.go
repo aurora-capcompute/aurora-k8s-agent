@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 )
 
 func TestCleanMentions(t *testing.T) {

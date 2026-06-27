@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
-	"aurora-k8s-agent/internal/brainspec"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/brainspec"
 )
 
 // ValidateGrant enforces the privilege boundary between a brain and a function

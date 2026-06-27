@@ -6,10 +6,10 @@ import (
 	"errors"
 	"strings"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
-	"aurora-k8s-agent/internal/binding"
-	chatpolicy "aurora-k8s-agent/internal/chat/policy"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/binding"
+	chatpolicy "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/policy"
 )
 
 // User and Set are the Slack-typed authorization records.

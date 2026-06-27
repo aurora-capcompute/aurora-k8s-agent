@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"aurora-k8s-agent/internal/apis/aurora/v1alpha1"
-	"aurora-k8s-agent/internal/binding"
-	"aurora-k8s-agent/internal/controller"
-	"aurora-k8s-agent/internal/secretbox"
-	"aurora-k8s-agent/internal/secrets"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/binding"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/controller"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/secretbox"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/secrets"
 )
 
 func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }

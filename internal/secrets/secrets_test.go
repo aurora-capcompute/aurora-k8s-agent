@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"aurora-k8s-agent/internal/apis/aurora/v1alpha1"
-	"aurora-k8s-agent/internal/secretbox"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/secretbox"
 )
 
 func TestInPlaceRoundTrip(t *testing.T) {

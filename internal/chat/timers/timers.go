@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"aurora-capcompute/aurora"
-	"aurora-dispatchers/timer"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-dispatchers/timer"
 )
 
 // TaskResolver is the slice of the runtime the scheduler needs. aurora.Runtime

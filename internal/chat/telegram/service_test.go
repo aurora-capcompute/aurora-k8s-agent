@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"aurora-capcompute/aurora"
-	"aurora-k8s-agent/internal/transport/telegram"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/telegram"
 )
 
 func TestRenderRunShowsAnswer(t *testing.T) {

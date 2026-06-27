@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
-	"aurora-dispatchers/mcp"
+	"github.com/aurora-capcompute/aurora-dispatchers/mcp"
 
-	"aurora-k8s-agent/internal/oci"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 )
 
 // requiredSecret reads a secret from a *_FILE path (preferred) or its value env
