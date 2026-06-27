@@ -3,13 +3,13 @@ module github.com/aurora-capcompute/aurora-k8s-agent
 go 1.26
 
 require (
-	github.com/aurora-capcompute/aurora-capcompute v0.0.0-00010101000000-000000000000
-	github.com/aurora-capcompute/aurora-dispatchers v0.0.0-00010101000000-000000000000
-	github.com/aurora-capcompute/aurora-dispatchers-helm v0.0.0-00010101000000-000000000000
-	github.com/aurora-capcompute/aurora-dispatchers-k8s v0.0.0-00010101000000-000000000000
-	github.com/aurora-capcompute/aurora-dispatchers-llm v0.0.0-00010101000000-000000000000
-	github.com/aurora-capcompute/aurora-stores v0.0.0-00010101000000-000000000000
-	github.com/aurora-capcompute/capcompute v0.0.0-00010101000000-000000000000
+	github.com/aurora-capcompute/aurora-capcompute v0.0.0-20260627175635-2ba6398f7463
+	github.com/aurora-capcompute/aurora-dispatchers v0.0.0-20260627175635-4faf2ba730e0
+	github.com/aurora-capcompute/aurora-dispatchers-helm v0.0.0-20260627175635-c2629cdff2f2
+	github.com/aurora-capcompute/aurora-dispatchers-k8s v0.0.0-20260627175635-fab65a63c017
+	github.com/aurora-capcompute/aurora-dispatchers-llm v0.0.0-20260627175635-0c3a1de28038
+	github.com/aurora-capcompute/aurora-stores v0.0.0-20260627175635-e5ef4e172be7
+	github.com/aurora-capcompute/capcompute v0.0.0-20260627175620-c28899f8fb86
 	github.com/extism/go-pdk v1.1.3
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/mattn/go-sqlite3 v1.14.46
