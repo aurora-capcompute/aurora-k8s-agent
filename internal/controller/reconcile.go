@@ -167,44 +167,46 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 			continue
 		}
 
-		secretsOK := true
-		for secretName, src := range bnd.Spec.Secrets {
-			if err := validateEnvVarName(secretName); err != nil {
-				res.BindingStatus[bnd.Name] = bindingNotReady("secret name %q: %v", secretName, err)
-				secretsOK = false
-				break
-			}
-			if err := validateSecret(secretName, src); err != nil {
-				res.BindingStatus[bnd.Name] = bindingNotReady("secret %q: %v", secretName, err)
-				secretsOK = false
+		settingsOK := true
+		for _, cap := range bnd.Spec.Allowed {
+			if err := validateCapabilitySettings(cap.Name, cap.Settings); err != nil {
+				res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
+				settingsOK = false
 				break
 			}
 		}
-		if !secretsOK {
+		if !settingsOK {
 			continue
 		}
 
-		manifest, err := assembly.BuildManifest(brain.decl, brain.decl.ID, bnd.Spec.SystemPrompt, toCapabilities(bnd.Spec.Allowed), provider)
+		systemPrompt, err := resolveSystemPrompt(bnd.Spec.SystemPrompt)
 		if err != nil {
 			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
 			continue
 		}
-		if err := assembly.ValidateChildrenSubset(manifest, provider); err != nil {
-			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
-			continue
-		}
-		validated, err := aurora.ValidateManifest(manifest, provider)
+
+		manifest, err := assembly.BuildManifest(brain.decl, brain.decl.ID, systemPrompt, bnd.Name, toCapabilities(bnd.Spec.Allowed), provider)
 		if err != nil {
 			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
 			continue
+		}
+		if err := validateCapabilityNorms(manifest, provider); err != nil {
+			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
+			continue
+		}
+
+		capSettings := make(map[string]map[string]v1alpha1.SettingValue, len(bnd.Spec.Allowed))
+		for _, cap := range bnd.Spec.Allowed {
+			capSettings[cap.Name] = cap.Settings
 		}
 
 		resolved := binding.Resolved{
-			Users:    append([]string(nil), channel.users...),
-			Scopes:   append([]string(nil), channel.scopes...),
-			Manifest: validated,
-			Digest:   digest(validated),
-			Secrets:  bnd.Spec.Secrets,
+			Users:              append([]string(nil), channel.users...),
+			Scopes:             append([]string(nil), channel.scopes...),
+			Manifest:           manifest,
+			Digest:             digest(manifest),
+			CapabilitySettings: capSettings,
+			BindingRef:         bnd.Name,
 		}
 		res.Bindings = append(res.Bindings, SourceBinding{Source: channel.source, Name: bnd.Name, Resolved: resolved})
 		channel.bindings = append(channel.bindings, resolved)
@@ -314,27 +316,6 @@ func resolveChannels(in Inputs, out map[string]*resolvedChannel, status map[stri
 	}
 }
 
-func validateEnvVarName(name string) error {
-	if len(name) == 0 {
-		return fmt.Errorf("env var name must not be empty")
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		switch {
-		case c == '_':
-		case c >= 'A' && c <= 'Z':
-		case c >= 'a' && c <= 'z':
-		case i > 0 && c >= '0' && c <= '9':
-		default:
-			if i == 0 {
-				return fmt.Errorf("must start with a letter or underscore, got %q", name)
-			}
-			return fmt.Errorf("must contain only letters, digits, and underscores, got %q", name)
-		}
-	}
-	return nil
-}
-
 func validateSecret(field string, src v1alpha1.SecretSource) error {
 	switch src.Type {
 	case v1alpha1.SecretInPlaceEncrypted:
@@ -353,6 +334,63 @@ func validateSecret(field string, src v1alpha1.SecretSource) error {
 	return nil
 }
 
+// validateCapabilitySettings checks ADT structure for each setting value:
+// type is known, and required variant fields are present.
+func validateCapabilitySettings(capName string, settings map[string]v1alpha1.SettingValue) error {
+	for k, sv := range settings {
+		switch sv.Type {
+		case v1alpha1.SettingLiteral:
+			if len(sv.Value) == 0 {
+				return fmt.Errorf("capability %q setting %q: literal value is required", capName, k)
+			}
+		case v1alpha1.SecretInPlaceEncrypted:
+			if sv.Ciphertext == "" {
+				return fmt.Errorf("capability %q setting %q: ciphertext is required for inPlaceEncrypted", capName, k)
+			}
+		case v1alpha1.SecretStorage:
+			if sv.Ref == nil || sv.Ref.Name == "" || sv.Ref.Key == "" {
+				return fmt.Errorf("capability %q setting %q: ref.{name,key} are required for secretStorage", capName, k)
+			}
+		case "":
+			return fmt.Errorf("capability %q setting %q: type is required", capName, k)
+		default:
+			return fmt.Errorf("capability %q setting %q: unknown type %q", capName, k, sv.Type)
+		}
+	}
+	return nil
+}
+
+// resolveSystemPrompt extracts the system prompt string from its SettingValue.
+// Only literal type is supported; encrypted variants are rejected (use literal).
+func resolveSystemPrompt(sv v1alpha1.SettingValue) (string, error) {
+	switch sv.Type {
+	case v1alpha1.SettingLiteral:
+		var s string
+		if err := json.Unmarshal(sv.Value, &s); err != nil {
+			return "", fmt.Errorf("system_prompt: literal value must be a JSON string: %w", err)
+		}
+		return s, nil
+	case "":
+		return "", nil
+	default:
+		return "", fmt.Errorf("system_prompt: type %q is not yet supported (use literal)", sv.Type)
+	}
+}
+
+// resolveLiterals extracts only literal-type settings to a plain JSON object.
+// Secret-type entries are dropped so they never appear in the manifest or reach
+// provider.IsSubset. Returns at least {} so callers always receive valid JSON.
+func resolveLiterals(settings map[string]v1alpha1.SettingValue) json.RawMessage {
+	out := make(map[string]json.RawMessage, len(settings))
+	for k, sv := range settings {
+		if sv.Type == v1alpha1.SettingLiteral {
+			out[k] = sv.Value
+		}
+	}
+	b, _ := json.Marshal(out)
+	return b
+}
+
 func validateSubjects(users, scopes []string) error {
 	if len(users) == 0 || len(scopes) == 0 {
 		return fmt.Errorf("users and scopes are required")
@@ -360,10 +398,24 @@ func validateSubjects(users, scopes []string) error {
 	return nil
 }
 
+// validateCapabilityNorms runs provider.Normalize on each root capability's
+// literal settings so bad base_url or header values are caught at reconcile
+// time rather than at first dispatch. The normalized result is discarded —
+// the manifest carries only informational capability names; resolved settings
+// live in the Provider warmup store keyed by BindingRef.
+func validateCapabilityNorms(m aurora.Manifest, provider aurora.DispatcherProvider) error {
+	for i := range m.Capabilities {
+		if _, err := provider.Normalize(m.Capabilities[i].Name, m.Capabilities[i].Settings); err != nil {
+			return fmt.Errorf("capability %q: %w", m.Capabilities[i].Name, err)
+		}
+	}
+	return nil
+}
+
 func toCapabilities(in []v1alpha1.Capability) []aurora.CapabilityConfig {
 	out := make([]aurora.CapabilityConfig, len(in))
 	for i, c := range in {
-		out[i] = aurora.CapabilityConfig{Name: c.Name, Settings: c.Settings}
+		out[i] = aurora.CapabilityConfig{Name: c.Name, Settings: resolveLiterals(c.Settings)}
 	}
 	return out
 }

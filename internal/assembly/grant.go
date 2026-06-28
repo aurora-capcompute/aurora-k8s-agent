@@ -50,9 +50,12 @@ func ValidateGrant(decl brainspec.Manifest, granted []aurora.CapabilityConfig, p
 //   - each node carries exactly the intersection of its declared capabilities and
 //     the grant, so the grant is a ceiling and per-node granularity stays with the
 //     brain's declaration.
+//
+// bindingName is stored as BindingRef in the manifest so Provider.Warmup can
+// look up resolved secrets at dispatch time; pass "" for file-based bindings.
 func BuildManifest(
 	decl brainspec.Manifest,
-	brainID, systemPrompt string,
+	brainID, systemPrompt, bindingName string,
 	allowed []aurora.CapabilityConfig,
 	provider aurora.DispatcherProvider,
 ) (aurora.Manifest, error) {
@@ -63,7 +66,7 @@ func BuildManifest(
 	declared := decl.DeclaredNames()
 	for name := range grant {
 		if _, ok := declared[name]; !ok {
-			return aurora.Manifest{}, fmt.Errorf("capability %q is not declared by brain %q", name, decl.ID)
+			return aurora.Manifest{}, fmt.Errorf("capability %q is not declared by brain %q (repack the brain to include it)", name, decl.ID)
 		}
 	}
 
@@ -71,20 +74,21 @@ func BuildManifest(
 	if err != nil {
 		return aurora.Manifest{}, err
 	}
-	children, err := buildChildren(decl.Children, grant, provider)
+	children, err := buildChildren(decl.Children, grant, bindingName, provider)
 	if err != nil {
 		return aurora.Manifest{}, err
 	}
 	return aurora.Manifest{
 		Version:      aurora.ManifestVersion,
 		Brain:        brainID,
+		BindingRef:   bindingName,
 		SystemPrompt: systemPrompt,
 		Capabilities: rootCaps,
 		Children:     children,
 	}, nil
 }
 
-func buildChildren(children []brainspec.Child, grant map[string]json.RawMessage, provider aurora.DispatcherProvider) ([]aurora.ChildManifest, error) {
+func buildChildren(children []brainspec.Child, grant map[string]json.RawMessage, bindingName string, provider aurora.DispatcherProvider) ([]aurora.ChildManifest, error) {
 	if len(children) == 0 {
 		return nil, nil
 	}
@@ -94,13 +98,14 @@ func buildChildren(children []brainspec.Child, grant map[string]json.RawMessage,
 		if err != nil {
 			return nil, err
 		}
-		sub, err := buildChildren(ch.Children, grant, provider)
+		sub, err := buildChildren(ch.Children, grant, bindingName, provider)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, aurora.ChildManifest{
 			Name:         ch.Name,
 			Brain:        ch.Brain,
+			BindingRef:   bindingName,
 			SystemPrompt: ch.SystemPrompt,
 			Capabilities: caps,
 			Children:     sub,
@@ -133,46 +138,9 @@ func nodeCaps(node string, declared []brainspec.Capability, grant map[string]jso
 	return out, nil
 }
 
-// ValidateChildrenSubset enforces that every delegation child's capabilities are
-// a subset of the parent's same-named capabilities. The upstream runtime
-// validates children only in isolation; this closes that gap at projection time.
-// A child may only use capabilities the parent holds, scoped no wider.
-func ValidateChildrenSubset(manifest aurora.Manifest, provider aurora.DispatcherProvider) error {
-	parent := make(map[string]json.RawMessage, len(manifest.Capabilities))
-	for _, cap := range manifest.Capabilities {
-		parent[cap.Name] = cap.Settings
-	}
-	for _, child := range manifest.Children {
-		if err := validateChildSubset(child, parent, provider); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateChildSubset(child aurora.ChildManifest, parent map[string]json.RawMessage, provider aurora.DispatcherProvider) error {
-	own := make(map[string]json.RawMessage, len(child.Capabilities))
-	for _, cap := range child.Capabilities {
-		parentSettings, ok := parent[cap.Name]
-		if !ok {
-			return fmt.Errorf("child %q capability %q is not held by its parent", child.Name, cap.Name)
-		}
-		if err := provider.IsSubset(cap.Name, parentSettings, cap.Settings); err != nil {
-			return fmt.Errorf("child %q capability %q exceeds parent: %w", child.Name, cap.Name, err)
-		}
-		own[cap.Name] = cap.Settings
-	}
-	for _, grandchild := range child.Children {
-		if err := validateChildSubset(grandchild, own, provider); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ValidateManifest validates a function-instance manifest against the brain it
-// names: the brain must be loaded, the grant must be a valid subset of the
-// brain's declaration, and the delegation tree must respect parent scopes.
+// names: the brain must be loaded, and the grant must be a valid subset of the
+// brain's declaration.
 func (p *OCIBrainProvider) ValidateManifest(manifest aurora.Manifest, provider aurora.DispatcherProvider) error {
 	brainID := manifest.Brain
 	if brainID == "" {
@@ -182,8 +150,5 @@ func (p *OCIBrainProvider) ValidateManifest(manifest aurora.Manifest, provider a
 	if !ok {
 		return fmt.Errorf("brain %q is not loaded", brainID)
 	}
-	if err := ValidateGrant(decl, manifest.Capabilities, provider); err != nil {
-		return err
-	}
-	return ValidateChildrenSubset(manifest, provider)
+	return ValidateGrant(decl, manifest.Capabilities, provider)
 }

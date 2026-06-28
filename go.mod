@@ -76,6 +76,8 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
+replace github.com/aurora-capcompute/aurora-capcompute => ../aurora-capcompute
+
 
 
 

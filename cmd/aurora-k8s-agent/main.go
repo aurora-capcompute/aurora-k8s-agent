@@ -170,7 +170,9 @@ func run() error {
 		if secretKey, keyErr := requiredSecret("AURORA_SECRET_KEY", "AURORA_SECRET_KEY_FILE"); keyErr != nil {
 			logger.Warn("AURORA_SECRET_KEY not set; channel CRDs will not start live bridges", "error", keyErr)
 		} else {
-			supervisor = channelsup.New(runtime, secrets.NewInPlace(secretKey), cfg.DataDir, stateKey,
+			resolver := secrets.NewInPlace(secretKey)
+			provider.SetResolver(resolver)
+			supervisor = channelsup.New(runtime, resolver, provider, cfg.DataDir, stateKey,
 				cfg.TelegramBaseURL, logger)
 			sources = append(sources, supervisor)
 		}

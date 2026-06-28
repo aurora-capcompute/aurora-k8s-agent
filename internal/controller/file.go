@@ -126,6 +126,11 @@ func (f *FileSource) reconcile(ctx context.Context) {
 	}
 	in := inputsFromObjects(objs, f.logger)
 	res := Reconcile(ctx, in, f.puller, f.provider)
+	for name, status := range res.BindingStatus {
+		if !status.Ready {
+			f.logger.Warn("fs control plane: binding not ready", "binding", name, "reason", status.Message)
+		}
+	}
 	f.logger.Info("fs control plane reconciled",
 		"dir", f.dir, "brains", len(in.Brains),
 		"channels", len(in.SlackChannels)+len(in.TelegramChannels)+len(in.WebChannels),
@@ -181,6 +186,29 @@ func decodeFsSpec(u *unstructured.Unstructured, kind string, out any, logger *sl
 		return false
 	}
 	return true
+}
+
+// ScanBrainArtifacts reads Brain CRDs from dir and returns their artifact refs.
+// Used at startup to pre-load brains before the async reconcile loop fires, so
+// the runtime can restore previous sessions without a "brain not registered" error.
+// Parse failures are silently skipped — the reconcile loop will log them properly.
+func ScanBrainArtifacts(dir string) []string {
+	objs, err := readManifests(dir)
+	if err != nil {
+		return nil
+	}
+	var refs []string
+	for _, u := range objs {
+		if u.GetKind() != v1alpha1.KindBrain {
+			continue
+		}
+		var spec v1alpha1.BrainSpec
+		if err := decodeSpec(u, &spec); err != nil || spec.Artifact == "" {
+			continue
+		}
+		refs = append(refs, spec.Artifact)
+	}
+	return refs
 }
 
 // readManifests reads every YAML/JSON file in dir and decodes each document into

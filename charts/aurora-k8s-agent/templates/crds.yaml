@@ -254,7 +254,21 @@ spec:
                     name:
                       type: string
                 systemPrompt:
-                  type: string
+                  type: object
+                  required: [type]
+                  properties:
+                    type:
+                      type: string
+                      enum: [literal, inPlaceEncrypted, secretStorage]
+                    value:
+                      x-kubernetes-preserve-unknown-fields: true
+                    ciphertext:
+                      type: string
+                    ref:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        key: {type: string}
                 allowed:
                   type: array
                   items:
@@ -265,29 +279,22 @@ spec:
                         type: string
                       settings:
                         type: object
-                        x-kubernetes-preserve-unknown-fields: true
-                secrets:
-                  type: object
-                  description: >-
-                    Encrypted credentials for this binding. Each key becomes a
-                    process env var name (e.g. OPENAI_API_KEY) injected at bridge
-                    startup; capability settings reference them by name (api_key_env:
-                    OPENAI_API_KEY). Keys are process-global: use distinct names
-                    across bindings if they carry different values.
-                  additionalProperties:
-                    type: object
-                    required: [type]
-                    properties:
-                      type:
-                        type: string
-                        enum: [inPlaceEncrypted, secretStorage]
-                      ciphertext:
-                        type: string
-                      ref:
-                        type: object
-                        properties:
-                          name: {type: string}
-                          key: {type: string}
+                        additionalProperties:
+                          type: object
+                          required: [type]
+                          properties:
+                            type:
+                              type: string
+                              enum: [literal, inPlaceEncrypted, secretStorage]
+                            value:
+                              x-kubernetes-preserve-unknown-fields: true
+                            ciphertext:
+                              type: string
+                            ref:
+                              type: object
+                              properties:
+                                name: {type: string}
+                                key: {type: string}
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

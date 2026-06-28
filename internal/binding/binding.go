@@ -39,15 +39,15 @@ type Binding struct {
 }
 
 // Resolved is one validated binding for a single source: the subjects and scopes
-// it grants, plus the resolved manifest, its digest, and any unresolved
-// credential sources that the channel supervisor will inject as env vars at
-// bridge start time.
+// it grants, plus the resolved manifest, its digest, and the ADT capability
+// settings for Provider.Warmup.
 type Resolved struct {
-	Users    []string
-	Scopes   []string
-	Manifest aurora.Manifest
-	Digest   string
-	Secrets  map[string]v1alpha1.SecretSource
+	Users              []string
+	Scopes             []string
+	Manifest           aurora.Manifest
+	Digest             string
+	CapabilitySettings map[string]map[string]v1alpha1.SettingValue // capName → settingName → SettingValue
+	BindingRef         string
 }
 
 // IsBindingFormat reports whether raw uses the named-manifest bindings format

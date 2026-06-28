@@ -74,8 +74,12 @@ func telegramChannel(t *testing.T, name, key, token string, bindings ...binding.
 	}
 }
 
+type noopWarmer struct{}
+
+func (noopWarmer) Warmup([]binding.Resolved) error { return nil }
+
 func newTestSupervisor(t *testing.T, key string, fake *fakeBridges) *Supervisor {
-	s := New(nil, secrets.NewInPlace(key), t.TempDir(), nil, "", quietLogger())
+	s := New(nil, secrets.NewInPlace(key), noopWarmer{}, t.TempDir(), nil, "", quietLogger())
 	s.starters = map[string]starter{"telegram": fake.starter("telegram")}
 	s.ctx = context.Background() // pretend Start ran
 	return s
@@ -133,7 +137,7 @@ func eventually(t *testing.T, cond func() bool, msg string) {
 
 func TestResolveTokensSecretLoop(t *testing.T) {
 	const key = "k"
-	s := New(nil, secrets.NewInPlace(key), t.TempDir(), nil, "", quietLogger())
+	s := New(nil, secrets.NewInPlace(key), noopWarmer{}, t.TempDir(), nil, "", quietLogger())
 
 	ch := telegramChannel(t, "ops", key, "xoxb-token")
 	tokens, hash1, err := s.resolveTokens(ch)

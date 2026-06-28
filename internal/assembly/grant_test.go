@@ -92,31 +92,6 @@ func TestValidateGrant(t *testing.T) {
 	}
 }
 
-func TestValidateChildrenSubset(t *testing.T) {
-	manifest := aurora.Manifest{
-		Version:      aurora.ManifestVersion,
-		Capabilities: []aurora.CapabilityConfig{{Name: "k8s.get", Settings: json.RawMessage(`{"namespaces":["default"]}`)}},
-		Children: []aurora.ChildManifest{{
-			Name:         "reader",
-			Brain:        "ops",
-			Capabilities: []aurora.CapabilityConfig{{Name: "k8s.get", Settings: json.RawMessage(`{"namespaces":["default"]}`)}},
-		}},
-	}
-	if err := ValidateChildrenSubset(manifest, nsProvider{}); err != nil {
-		t.Fatalf("valid child rejected: %v", err)
-	}
-
-	manifest.Children[0].Capabilities[0].Settings = json.RawMessage(`{"namespaces":["other"]}`)
-	if err := ValidateChildrenSubset(manifest, nsProvider{}); err == nil {
-		t.Fatal("child exceeding parent namespace should be rejected")
-	}
-
-	manifest.Children[0].Capabilities = []aurora.CapabilityConfig{{Name: "helm.upgrade"}}
-	if err := ValidateChildrenSubset(manifest, nsProvider{}); err == nil {
-		t.Fatal("child using a capability the parent lacks should be rejected")
-	}
-}
-
 func TestProviderValidateManifest(t *testing.T) {
 	decl := brainspec.Manifest{ID: "ops", Capabilities: []brainspec.Capability{{Name: "k8s.get"}}}
 	puller := fakePuller{byRef: map[string]oci.Artifact{

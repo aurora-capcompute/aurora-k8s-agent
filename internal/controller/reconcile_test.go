@@ -105,6 +105,10 @@ func TestReconcileHappyPath(t *testing.T) {
 		string(res.Brains[0].Wasm) != "\x00asm" || res.Brains[0].Digest != "sha256:ops" {
 		t.Fatalf("resolved brains = %+v", res.Brains)
 	}
+	// BindingRef is set so the supervisor can look up capability settings.
+	if res.Bindings[0].BindingRef != "ops-tg" {
+		t.Fatalf("BindingRef = %q, want ops-tg", res.Bindings[0].BindingRef)
+	}
 }
 
 func TestReconcileRejectsUndeclaredCapability(t *testing.T) {
@@ -150,7 +154,12 @@ func TestReconcileRejectsSettingsExceedingBounds(t *testing.T) {
 		Bindings: []NamedBinding{{Name: "wide", Spec: v1alpha1.ChannelBindingSpec{
 			BrainRef:   "ops",
 			ChannelRef: v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
-			Allowed:    []v1alpha1.Capability{{Name: "k8s.get", Settings: json.RawMessage(`{"ns":["a","b"]}`)}},
+			Allowed: []v1alpha1.Capability{{
+				Name: "k8s.get",
+				Settings: map[string]v1alpha1.SettingValue{
+					"ns": {Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`["a","b"]`)},
+				},
+			}},
 		}}},
 	}
 	res := Reconcile(context.Background(), in, puller, testProvider{subsetErr: errors.New("wider than declared")})
@@ -202,6 +211,10 @@ func TestReconcileTreeRequiredUnion(t *testing.T) {
 	m := res.Bindings[0].Manifest
 	if len(m.Children) != 1 || len(m.Children[0].Capabilities) != 1 || m.Children[0].Capabilities[0].Name != "llm.chat" {
 		t.Fatalf("child manifest = %+v", m.Children)
+	}
+	// Children must inherit BindingRef so they use the warmup store for secrets.
+	if m.Children[0].BindingRef != "full" {
+		t.Fatalf("child BindingRef = %q, want full", m.Children[0].BindingRef)
 	}
 }
 
@@ -264,49 +277,60 @@ func TestReconcileIsolatesFailures(t *testing.T) {
 	}
 }
 
-func bindWithSecrets(name, brainRef, chanKind, chanName string, secrets map[string]v1alpha1.SecretSource, allowed ...string) NamedBinding {
-	nb := bind(name, brainRef, chanKind, chanName, allowed...)
-	nb.Spec.Secrets = secrets
-	return nb
-}
-
-func TestReconcileBindingSecretValid(t *testing.T) {
+// TestReconcileCapabilitySettingValidADT verifies that a capability with ADT
+// settings (literal and inPlaceEncrypted) passes reconcile validation.
+func TestReconcileCapabilitySettingValidADT(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "openai.chat"}),
 	}}
-	secrets := map[string]v1alpha1.SecretSource{
-		"OPENAI_API_KEY": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: "AAAA"},
-	}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
-		Bindings:         []NamedBinding{bindWithSecrets("ops-tg", "ops", v1alpha1.KindTelegramChannel, "tg", secrets, "k8s.get")},
+		Bindings: []NamedBinding{{Name: "b", Spec: v1alpha1.ChannelBindingSpec{
+			BrainRef:   "ops",
+			ChannelRef: v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
+			Allowed: []v1alpha1.Capability{{
+				Name: "openai.chat",
+				Settings: map[string]v1alpha1.SettingValue{
+					"base_url": {Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`"https://api.openai.com/v1"`)},
+					"api_key":  {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: "AAAA"},
+				},
+			}},
+		}}},
 	}
 	res := Reconcile(context.Background(), in, puller, testProvider{})
-	if !res.BindingStatus["ops-tg"].Ready {
-		t.Fatalf("binding with valid secret should be Ready: %+v", res.BindingStatus["ops-tg"])
+	if !res.BindingStatus["b"].Ready {
+		t.Fatalf("binding with valid ADT settings should be Ready: %+v", res.BindingStatus["b"])
 	}
 	if len(res.Bindings) != 1 {
 		t.Fatalf("expected 1 resolved binding, got %d", len(res.Bindings))
 	}
-	got := res.Bindings[0].Secrets
-	if len(got) != 1 || got["OPENAI_API_KEY"].Type != v1alpha1.SecretInPlaceEncrypted {
-		t.Fatalf("secrets not carried through to resolved binding: %+v", got)
+	// CapabilitySettings carries all ADT values (including secrets) for Warmup.
+	capSettings := res.Bindings[0].CapabilitySettings
+	if capSettings["openai.chat"]["api_key"].Type != v1alpha1.SecretInPlaceEncrypted {
+		t.Fatalf("api_key setting not carried through: %+v", capSettings)
 	}
 }
 
-func TestReconcileBindingSecretInvalidSource(t *testing.T) {
-	// Empty ciphertext for inPlaceEncrypted should cause not-ready, not a panic.
+// TestReconcileCapabilitySettingInvalidSource verifies that an inPlaceEncrypted
+// setting with empty ciphertext causes not-ready.
+func TestReconcileCapabilitySettingInvalidSource(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "openai.chat"}),
 	}}
-	secrets := map[string]v1alpha1.SecretSource{
-		"OPENAI_API_KEY": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: ""},
-	}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
-		Bindings:         []NamedBinding{bindWithSecrets("bad", "ops", v1alpha1.KindTelegramChannel, "tg", secrets, "k8s.get")},
+		Bindings: []NamedBinding{{Name: "bad", Spec: v1alpha1.ChannelBindingSpec{
+			BrainRef:   "ops",
+			ChannelRef: v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
+			Allowed: []v1alpha1.Capability{{
+				Name: "openai.chat",
+				Settings: map[string]v1alpha1.SettingValue{
+					"api_key": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: ""},
+				},
+			}},
+		}}},
 	}
 	res := Reconcile(context.Background(), in, puller, testProvider{})
 	if res.BindingStatus["bad"].Ready {
@@ -316,56 +340,110 @@ func TestReconcileBindingSecretInvalidSource(t *testing.T) {
 		t.Fatal("not-ready binding should carry a message")
 	}
 	if len(res.Bindings) != 0 {
-		t.Fatal("no resolved binding should be produced for a bad secret")
+		t.Fatal("no resolved binding should be produced for a bad setting")
 	}
 }
 
-func TestReconcileBindingSecretBadName(t *testing.T) {
-	// A secret key that is not a valid env var name should cause not-ready.
+// TestReconcileCapabilitySettingUnknownType verifies that an unknown setting
+// type causes not-ready.
+func TestReconcileCapabilitySettingUnknownType(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "openai.chat"}),
 	}}
-	secrets := map[string]v1alpha1.SecretSource{
-		"bad-key": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: "AAAA"},
-	}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
-		Bindings:         []NamedBinding{bindWithSecrets("bad", "ops", v1alpha1.KindTelegramChannel, "tg", secrets, "k8s.get")},
+		Bindings: []NamedBinding{{Name: "bad", Spec: v1alpha1.ChannelBindingSpec{
+			BrainRef:   "ops",
+			ChannelRef: v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
+			Allowed: []v1alpha1.Capability{{
+				Name:     "openai.chat",
+				Settings: map[string]v1alpha1.SettingValue{"api_key": {Type: "magic"}},
+			}},
+		}}},
 	}
 	res := Reconcile(context.Background(), in, puller, testProvider{})
 	if res.BindingStatus["bad"].Ready {
-		t.Fatal("binding with invalid env var name should not be Ready")
-	}
-	if res.BindingStatus["bad"].Message == "" {
-		t.Fatal("not-ready binding should carry a message")
+		t.Fatal("binding with unknown setting type should not be Ready")
 	}
 }
 
-func TestReconcileBindingSecretDoesNotBlockSiblings(t *testing.T) {
-	// A binding with a bad secret must not block a sibling good binding.
+// TestReconcileCapabilitySettingDoesNotBlockSiblings verifies that a bad ADT
+// setting in one binding does not prevent a sibling binding from resolving.
+func TestReconcileCapabilitySettingDoesNotBlockSiblings(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "openai.chat"}),
 	}}
-	badSecrets := map[string]v1alpha1.SecretSource{
-		"OPENAI_API_KEY": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: ""},
-	}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
 		Bindings: []NamedBinding{
-			bindWithSecrets("bad", "ops", v1alpha1.KindTelegramChannel, "tg", badSecrets, "k8s.get"),
-			bind("good", "ops", v1alpha1.KindTelegramChannel, "tg", "k8s.get"),
+			{Name: "bad", Spec: v1alpha1.ChannelBindingSpec{
+				BrainRef:   "ops",
+				ChannelRef: v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
+				Allowed: []v1alpha1.Capability{{
+					Name:     "openai.chat",
+					Settings: map[string]v1alpha1.SettingValue{"api_key": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: ""}},
+				}},
+			}},
+			bind("good", "ops", v1alpha1.KindTelegramChannel, "tg", "openai.chat"),
 		},
 	}
 	res := Reconcile(context.Background(), in, puller, testProvider{})
 	if res.BindingStatus["bad"].Ready {
-		t.Fatal("binding with bad secret should not be Ready")
+		t.Fatal("binding with bad setting should not be Ready")
 	}
 	if !res.BindingStatus["good"].Ready {
 		t.Fatalf("good sibling binding should still be Ready: %+v", res.BindingStatus["good"])
 	}
 	if len(res.Bindings) != 1 || res.Bindings[0].Name != "good" {
 		t.Fatalf("only the good binding should be resolved: %+v", res.Bindings)
+	}
+}
+
+// TestReconcileSystemPromptLiteral verifies that a literal system prompt is
+// resolved at reconcile time and stored in the manifest.
+func TestReconcileSystemPromptLiteral(t *testing.T) {
+	puller := fakePuller{byRef: map[string]oci.Artifact{
+		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+	}}
+	in := Inputs{
+		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
+		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
+		Bindings: []NamedBinding{{Name: "b", Spec: v1alpha1.ChannelBindingSpec{
+			BrainRef:     "ops",
+			ChannelRef:   v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
+			SystemPrompt: v1alpha1.SettingValue{Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`"You are a helper."`)},
+			Allowed:      []v1alpha1.Capability{{Name: "k8s.get"}},
+		}}},
+	}
+	res := Reconcile(context.Background(), in, puller, testProvider{})
+	if !res.BindingStatus["b"].Ready {
+		t.Fatalf("binding with literal system prompt should be Ready: %+v", res.BindingStatus["b"])
+	}
+	if got := res.Bindings[0].Manifest.SystemPrompt; got != "You are a helper." {
+		t.Fatalf("system prompt = %q, want 'You are a helper.'", got)
+	}
+}
+
+// TestReconcileSystemPromptEncryptedRejected verifies that a non-literal system
+// prompt type causes not-ready (not yet supported).
+func TestReconcileSystemPromptEncryptedRejected(t *testing.T) {
+	puller := fakePuller{byRef: map[string]oci.Artifact{
+		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+	}}
+	in := Inputs{
+		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
+		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
+		Bindings: []NamedBinding{{Name: "b", Spec: v1alpha1.ChannelBindingSpec{
+			BrainRef:     "ops",
+			ChannelRef:   v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
+			SystemPrompt: v1alpha1.SettingValue{Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: "AAAA"},
+			Allowed:      []v1alpha1.Capability{{Name: "k8s.get"}},
+		}}},
+	}
+	res := Reconcile(context.Background(), in, puller, testProvider{})
+	if res.BindingStatus["b"].Ready {
+		t.Fatal("binding with encrypted system prompt should not be Ready (not yet supported)")
 	}
 }

@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"strings"
 
 	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/telegram/state"
@@ -17,6 +18,7 @@ func (s *Service) handleEvent(ctx context.Context, conversation state.Conversati
 		if decodeEvent(event.Data, &run) == nil {
 			if terminal(run.Status) {
 				s.timers.CancelRun(run.ID)
+				s.runProgress.Delete(run.ID)
 			}
 			s.updateRunMessage(ctx, run)
 		}
@@ -47,7 +49,16 @@ func (s *Service) updateRunProgress(ctx context.Context, progress aurora.Progres
 	if err != nil || !found || message.State != string(aurora.RunRunning) {
 		return
 	}
-	text := "🧠 <b>Working…</b>\n\n" + escape(progress.Message)
+	var lines []string
+	if v, ok := s.runProgress.Load(progress.RunID); ok {
+		lines = v.([]string)
+	}
+	lines = append(lines, escape(progress.Message))
+	if len(lines) > 20 {
+		lines = lines[len(lines)-20:]
+	}
+	s.runProgress.Store(progress.RunID, lines)
+	text := "🧠 <b>Working…</b>\n\n" + strings.Join(lines, "\n")
 	if err := s.client.EditMessage(ctx, message.ChatID, message.MessageID, text, stopKeyboard(progress.RunID)); err != nil {
 		s.logger.Debug("edit progress", "run_id", progress.RunID, "error", err)
 	}

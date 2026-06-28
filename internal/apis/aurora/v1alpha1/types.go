@@ -74,6 +74,22 @@ const (
 	SecretStorage          = "secretStorage"
 )
 
+// SettingValue is a tagged union for capability constructor arguments. Every
+// capability setting — api_key, base_url, allowed_models, namespaces, etc. —
+// is expressed as a SettingValue so secrets and plain config share one encoding.
+//
+//   - "literal":          Value holds the raw JSON for the setting.
+//   - "inPlaceEncrypted": Ciphertext holds base64(nonce‖AES-GCM ciphertext).
+//   - "secretStorage":    Ref points at an external secret.
+type SettingValue struct {
+	Type       string          `json:"type"`
+	Value      json.RawMessage `json:"value,omitempty"`      // literal
+	Ciphertext string          `json:"ciphertext,omitempty"` // inPlaceEncrypted
+	Ref        *SecretKeyRef   `json:"ref,omitempty"`        // secretStorage
+}
+
+const SettingLiteral = "literal"
+
 // SecretKeyRef names a key within an external secret (the secretStorage variant).
 type SecretKeyRef struct {
 	Name string `json:"name"`
@@ -116,8 +132,8 @@ type ChannelStatus struct {
 
 // Capability is a capability grant: a name plus optional scoped settings.
 type Capability struct {
-	Name     string          `json:"name"`
-	Settings json.RawMessage `json:"settings,omitempty"`
+	Name     string                  `json:"name"`
+	Settings map[string]SettingValue `json:"settings,omitempty"`
 }
 
 // ChannelRef names a typed channel: its kind (SlackChannel/TelegramChannel/
@@ -132,17 +148,15 @@ type ChannelRef struct {
 // capability the tree requires must be present, scoped no wider than the brain
 // declares.
 //
-// Secrets holds encrypted credentials for this binding. Each key becomes the
-// env var name the agent sets at bridge startup (e.g. key "OPENAI_API_KEY"
-// becomes os.Setenv("OPENAI_API_KEY", resolvedPlaintext)). Capability settings
-// in Allowed can reference these env vars by name — e.g. api_key_env:
-// OPENAI_API_KEY — so the plaintext never appears in the stored manifest.
+// Every capability constructor argument — api_key, base_url, allowed_models,
+// etc. — is expressed as a SettingValue so secrets and plain config share one
+// encoding. Settings are resolved once at channel instantiation time; no
+// env vars are used and nothing is stored on threads.
 type ChannelBindingSpec struct {
-	BrainRef     string                 `json:"brainRef"`
-	ChannelRef   ChannelRef             `json:"channelRef"`
-	SystemPrompt string                 `json:"systemPrompt,omitempty"`
-	Allowed      []Capability           `json:"allowed"`
-	Secrets      map[string]SecretSource `json:"secrets,omitempty"`
+	BrainRef     string       `json:"brainRef"`
+	ChannelRef   ChannelRef   `json:"channelRef"`
+	SystemPrompt SettingValue `json:"systemPrompt,omitempty"`
+	Allowed      []Capability `json:"allowed"`
 }
 
 // ChannelBindingStatus reports validation state.

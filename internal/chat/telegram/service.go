@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +32,9 @@ type Service struct {
 	logger   *slog.Logger
 	timers   *chattimers.Scheduler
 	subs     *chat.Subscriptions
+	// runProgress accumulates progress lines per run so all tool calls remain
+	// visible in the status message (not just the latest one).
+	runProgress sync.Map // runID string → []string
 }
 
 func New(

@@ -40,18 +40,24 @@ func buildFileControlPlane(cfg Config, provider aurora.DispatcherProvider, onRes
 
 // buildBrainProvider selects the brain source loaded at startup. With cfg.BrainRefs
 // set (registry refs or "oci-layout:<dir>:<tag>" for a registry-less on-disk
-// layout) those brains are loaded up front. With it empty the agent boots with no
-// brain (EmptyProvider); brains are then supplied at runtime by Brain CRDs through
-// the control plane, which hot-loads them via runtime.SetBrains.
+// layout) those brains are loaded up front. With BrainRefs empty but the fs
+// control plane active, Brain CRDs in cfg.ResourcesDir are pre-scanned so the
+// runtime can restore previous sessions before the async reconcile loop fires.
+// Otherwise the agent boots with EmptyProvider and receives brains at runtime via
+// Brain CRDs hot-loaded through runtime.SetBrains.
 func buildBrainProvider(ctx context.Context, cfg Config, logger *slog.Logger) (aurora.BrainProvider, error) {
-	if len(cfg.BrainRefs) == 0 {
+	refs := cfg.BrainRefs
+	if len(refs) == 0 && cfg.ControlPlane == "fs" && cfg.ResourcesDir != "" {
+		refs = controller.ScanBrainArtifacts(cfg.ResourcesDir)
+	}
+	if len(refs) == 0 {
 		return assembly.EmptyProvider{}, nil
 	}
-	provider, err := assembly.NewOCIBrainProvider(ctx, cfg.BrainRefs, cfg.BrainDefault, oci.NewRemotePuller(cfg.OCIOptions...))
+	provider, err := assembly.NewOCIBrainProvider(ctx, refs, cfg.BrainDefault, oci.NewRemotePuller(cfg.OCIOptions...))
 	if err != nil {
 		return nil, fmt.Errorf("load brains from OCI: %w", err)
 	}
-	logger.Info("loaded brains from OCI", "count", len(cfg.BrainRefs), "default", provider.DefaultID())
+	logger.Info("loaded brains from OCI", "count", len(refs), "default", provider.DefaultID())
 	return provider, nil
 }
 

@@ -156,7 +156,7 @@ policy:
           - name: openai.chat
             settings:
               base_url: https://api.openai.com/v1
-              api_key_env: OPENAI_API_KEY
+              api_key: ""   # use ChannelBinding SettingValue ADT for secrets
               default_model: gpt-5.5
               allowed_models: [gpt-5.5]
               require_approval: false
@@ -246,7 +246,7 @@ policy:
       brain: kubernetes-agent
       capabilities:
         - name: openai.chat
-          settings: {api_key_env: OPENAI_API_KEY, default_model: gpt-5.5}
+          settings: {api_key: "", default_model: gpt-5.5}  # use SettingValue ADT for api_key
         - name: k8s.get
           settings: {namespaces: [default]}
   bindings:
@@ -366,9 +366,10 @@ does not configure a task TTL, so timers up to `max_duration_ms` are safe.
 ## OpenAI-compatible providers
 
 `openai.chat` supports OpenAI and compatible gateways. Configure `base_url`,
-`default_model`, `allowed_models`, `api_key_env`, and optional
-`headers_from_env` in each user's manifest. The API key itself remains in a
-Kubernetes Secret and is never persisted in an Aurora manifest.
+`default_model`, `allowed_models`, and `api_key` in each capability's settings.
+With ChannelBinding CRDs (the default path), set `api_key` as a `SettingValue`
+with `type: inPlaceEncrypted` — the key is resolved at channel start and never
+persisted in a manifest or thread summary.
 
 The cognition capability is dispatchable by the brain but filtered from the
 operational tools shown to the model. Only the session's effective Kubernetes

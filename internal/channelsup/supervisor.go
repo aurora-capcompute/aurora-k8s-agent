@@ -9,8 +9,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sync"
 
@@ -31,10 +31,18 @@ import (
 	slapi "github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/slack"
 )
 
+// Warmer resolves capability settings for a set of bindings and caches them so
+// that NewDispatcher can build configured dispatchers without re-decrypting
+// secrets on every call.
+type Warmer interface {
+	Warmup(bindings []binding.Resolved) error
+}
+
 // Supervisor manages per-channel bridges from control-plane snapshots.
 type Supervisor struct {
 	runtime         aurora.Runtime
 	resolver        secrets.Resolver
+	warmer          Warmer
 	dataDir         string
 	stateKey        []byte
 	telegramBaseURL string
@@ -63,11 +71,13 @@ type managed struct {
 	closeStore  func() error
 }
 
-// New builds a Supervisor. baseURL overrides the Telegram API endpoint (for tests
-// and the kind smoke); empty uses the default.
-func New(runtime aurora.Runtime, resolver secrets.Resolver, dataDir string, stateKey []byte, telegramBaseURL string, logger *slog.Logger) *Supervisor {
+// New builds a Supervisor. warmer is called at channel start and on hot-swap to
+// resolve capability secrets; baseURL overrides the Telegram API endpoint (for
+// tests and the kind smoke); empty uses the default.
+func New(runtime aurora.Runtime, resolver secrets.Resolver, warmer Warmer, dataDir string, stateKey []byte, telegramBaseURL string, logger *slog.Logger) *Supervisor {
 	s := &Supervisor{
-		runtime: runtime, resolver: resolver, dataDir: dataDir, stateKey: stateKey,
+		runtime: runtime, resolver: resolver, warmer: warmer,
+		dataDir: dataDir, stateKey: stateKey,
 		telegramBaseURL: telegramBaseURL, logger: logger,
 		running: make(map[string]*managed),
 	}
@@ -132,7 +142,10 @@ func (s *Supervisor) reconcile(res controller.Resolved) {
 			s.logger.Warn("channel supervisor: resolve secret", "channel", key, "error", err)
 			continue
 		}
-		s.injectBindingSecrets(key, ch.Bindings)
+		if err := s.warmer.Warmup(ch.Bindings); err != nil {
+			s.logger.Warn("channel supervisor: warmup capability settings", "channel", key, "error", err)
+			continue
+		}
 		s.mu.Lock()
 		current, ok := s.running[key]
 		s.mu.Unlock()
@@ -157,27 +170,6 @@ func (s *Supervisor) reconcile(res controller.Resolved) {
 	s.mu.Unlock()
 	for _, key := range stale {
 		s.stop(key, false)
-	}
-}
-
-// injectBindingSecrets resolves each binding's Secrets and injects them into
-// the process environment so capability dispatchers can read them by name.
-// The secret map key is used verbatim as the env var name (e.g. "OPENAI_API_KEY").
-// Called before bridge start and on hot-swaps. Dispatcher clients cache their
-// HTTP connections at bridge startup (keyed by env var name, not value), so
-// secret rotation requires a bridge restart to take effect.
-func (s *Supervisor) injectBindingSecrets(channel string, bindings []binding.Resolved) {
-	for _, b := range bindings {
-		for name, src := range b.Secrets {
-			val, err := s.resolver.Resolve(src)
-			if err != nil {
-				s.logger.Warn("channel supervisor: resolve binding secret", "channel", channel, "secret", name, "error", err)
-				continue
-			}
-			if err := os.Setenv(name, string(val)); err != nil {
-				s.logger.Warn("channel supervisor: inject binding secret", "channel", channel, "secret", name, "error", err)
-			}
-		}
 	}
 }
 
@@ -233,6 +225,10 @@ func (s *Supervisor) startTelegram(ch controller.ResolvedChannel, tokens map[str
 	if err != nil {
 		return nil, err
 	}
+	if len(ch.Bindings) == 0 {
+		store.Close()
+		return nil, fmt.Errorf("no bindings are ready for this channel — check binding validation warnings above")
+	}
 	policies, err := tgpolicy.FromResolved(ch.Bindings)
 	if err != nil {
 		store.Close()
@@ -263,6 +259,10 @@ func (s *Supervisor) startSlack(ch controller.ResolvedChannel, tokens map[string
 	store, err := slstate.Open(filepath.Join(s.dataDir, "slack-"+ch.Name+".db"), s.stateKey)
 	if err != nil {
 		return nil, err
+	}
+	if len(ch.Bindings) == 0 {
+		store.Close()
+		return nil, fmt.Errorf("no bindings are ready for this channel — check binding validation warnings above")
 	}
 	policies, err := slpolicy.FromResolved(ch.Bindings)
 	if err != nil {
