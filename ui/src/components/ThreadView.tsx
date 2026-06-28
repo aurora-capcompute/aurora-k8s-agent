@@ -1,28 +1,49 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, subscribe } from "../api";
-import type { RunGraphNode, RunStatus, ThreadGraph } from "../types";
+import { api, subscribe, UnauthorizedError } from "../api";
+import type { RunStatus, ThreadGraph } from "../types";
+
+const TERMINAL: ReadonlySet<RunStatus> = new Set([
+  "completed",
+  "stopped",
+  "failed",
+  "interrupted",
+]);
 import { CallGraph } from "./CallGraph";
-import { ThreadGraphView } from "./ThreadGraphView";
 import { RunPanel } from "./RunPanel";
 
 type Tab = "chat" | "graph" | "revisions";
-type Scope = "thread" | "run";
 
 function StatusBadge({ status }: { status: RunStatus }) {
   return <span className={`badge badge-${status}`}>{status}</span>;
 }
 
-export function ThreadView({ threadID }: { threadID: string }) {
+export function ThreadView({
+  threadID,
+  onUnauthorized,
+}: {
+  threadID: string;
+  onUnauthorized?: () => void;
+}) {
   const [graph, setGraph] = useState<ThreadGraph | null>(null);
-  const [runGraph, setRunGraph] = useState<RunGraphNode | null>(null);
   const [selectedRun, setSelectedRun] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("chat");
-  const [scope, setScope] = useState<Scope>("thread");
   const [tick, setTick] = useState(0);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Map<string, string[]>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const handleError = useCallback(
+    (e: unknown) => {
+      if (e instanceof UnauthorizedError) {
+        onUnauthorized?.();
+      } else {
+        setError(String(e));
+      }
+    },
+    [onUnauthorized],
+  );
 
   const reload = useCallback(async () => {
     try {
@@ -30,53 +51,63 @@ export function ThreadView({ threadID }: { threadID: string }) {
       setGraph(g);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      handleError(e);
     }
-  }, [threadID]);
+  }, [threadID, handleError]);
+
+  const onProgress = useCallback((runID: string, message: string) => {
+    setProgress((prev) => {
+      const lines = prev.get(runID) ?? [];
+      const next = new Map(prev);
+      next.set(runID, [...lines.slice(-19), message]);
+      return next;
+    });
+  }, []);
+
+  // Clear progress lines for runs that have reached a terminal state.
+  useEffect(() => {
+    const runs = graph?.runs ?? [];
+    const done = runs.filter((r) => TERMINAL.has(r.status)).map((r) => r.run_id);
+    if (done.length === 0) return;
+    setProgress((prev) => {
+      if (!done.some((id) => prev.has(id))) return prev;
+      const next = new Map(prev);
+      done.forEach((id) => next.delete(id));
+      return next;
+    });
+  }, [graph]);
 
   useEffect(() => {
     setGraph(null);
-    setRunGraph(null);
     setSelectedRun(null);
-    setScope("thread");
+    setProgress(new Map());
     void reload();
-    // Bump tick on every event so child panels (RunPanel) refetch live, and
-    // reload the thread graph itself.
-    const unsubscribe = subscribe(threadID, () => {
-      setTick((t) => t + 1);
-      void reload();
-    });
+    const unsubscribe = subscribe(
+      threadID,
+      () => {
+        setTick((t) => t + 1);
+        void reload();
+      },
+      onProgress,
+    );
     return unsubscribe;
-  }, [threadID, reload]);
+  }, [threadID, reload, onProgress]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [graph]);
 
-  // The run whose call graph the "run" scope shows: the selection, else the
-  // last run in the thread.
   const focusRun = useMemo(() => {
     if (selectedRun) return selectedRun;
-    const last = graph?.runs[graph.runs.length - 1];
-    return last?.run_id ?? null;
+    const runs = graph?.runs ?? [];
+    return runs[runs.length - 1]?.run_id ?? null;
   }, [selectedRun, graph]);
 
-  useEffect(() => {
-    if (!focusRun) {
-      setRunGraph(null);
-      return;
-    }
-    let stale = false;
-    api
-      .runGraph(focusRun)
-      .then((g) => {
-        if (!stale) setRunGraph(g);
-      })
-      .catch((e) => setError(String(e)));
-    return () => {
-      stale = true;
-    };
-  }, [focusRun, tick]);
+  const focusRevisions = useMemo(() => {
+    if (!graph || !focusRun) return null;
+    const run = (graph.runs ?? []).find((r) => r.run_id === focusRun);
+    return run?.revisions ?? null;
+  }, [graph, focusRun]);
 
   const send = async () => {
     const message = input.trim();
@@ -87,7 +118,7 @@ export function ThreadView({ threadID }: { threadID: string }) {
       await api.sendMessage(threadID, message);
       await reload();
     } catch (e) {
-      setError(String(e));
+      handleError(e);
     } finally {
       setBusy(false);
     }
@@ -95,7 +126,6 @@ export function ThreadView({ threadID }: { threadID: string }) {
 
   const inspect = (runID: string) => {
     setSelectedRun(runID);
-    setScope("run");
     setTab("graph");
   };
 
@@ -119,9 +149,20 @@ export function ThreadView({ threadID }: { threadID: string }) {
       {tab === "chat" && (
         <>
           <div className="transcript">
-            {graph?.runs.map((run) => (
+            {(graph?.runs ?? []).map((run) => (
               <div key={run.run_id} className="exchange">
                 <div className="msg user">{run.message}</div>
+                {!TERMINAL.has(run.status) &&
+                  (progress.get(run.run_id)?.length ?? 0) > 0 && (
+                    <div className="msg progress-msg">
+                      <div className="progress-header">Working…</div>
+                      {(progress.get(run.run_id) ?? []).map((line, i) => (
+                        <div key={i} className="progress-line">
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 {run.answer && <div className="msg assistant">{run.answer}</div>}
                 {run.error && <div className="msg error-msg">⚠ {run.error}</div>}
                 <div className="run-meta">
@@ -155,43 +196,19 @@ export function ThreadView({ threadID }: { threadID: string }) {
       )}
 
       {tab === "graph" &&
-        (graph && graph.runs.length > 0 ? (
+        (graph && (graph.runs?.length ?? 0) > 0 ? (
           <div className="graph-wrap">
-            <div className="scope-toggle">
-              {(["thread", "run"] as Scope[]).map((s) => (
-                <button
-                  key={s}
-                  className={scope === s ? "chip active" : "chip"}
-                  onClick={() => setScope(s)}
-                >
-                  {s === "thread" ? "Thread DAG" : "Run call graph"}
-                </button>
-              ))}
-            </div>
             <div className="graph-split">
               <div className="graph-canvas">
-                {scope === "thread" ? (
-                  <ThreadGraphView
-                    graph={graph}
-                    selected={selectedRun}
-                    onSelect={setSelectedRun}
-                  />
-                ) : runGraph ? (
-                  <CallGraph
-                    root={runGraph}
-                    selected={selectedRun}
-                    onSelect={setSelectedRun}
-                  />
-                ) : (
-                  <div className="empty">No call graph.</div>
-                )}
+                <CallGraph revisions={focusRevisions ?? []} />
               </div>
-              {selectedRun && (
+              {focusRun && (
                 <div className="graph-side">
                   <RunPanel
-                    runID={selectedRun}
+                    runID={focusRun}
                     tick={tick}
                     onChanged={() => void reload()}
+                    onUnauthorized={onUnauthorized}
                   />
                 </div>
               )}
@@ -203,7 +220,7 @@ export function ThreadView({ threadID }: { threadID: string }) {
 
       {tab === "revisions" && (
         <div className="revisions">
-          {graph?.runs.map((run) => (
+          {(graph?.runs ?? []).map((run) => (
             <div key={run.run_id} className="rev-run">
               <div className="rev-run-head">
                 <button className="link" onClick={() => inspect(run.run_id)}>

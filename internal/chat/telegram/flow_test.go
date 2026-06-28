@@ -43,7 +43,7 @@ type flowRuntime struct {
 	created bool
 }
 
-func (r *flowRuntime) CreateThread(manifest aurora.Manifest) (aurora.ThreadSnapshot, error) {
+func (r *flowRuntime) CreateThread(manifest aurora.Manifest, tags map[string]string) (aurora.ThreadSnapshot, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.thread = aurora.ThreadSnapshot{ThreadSummary: aurora.ThreadSummary{

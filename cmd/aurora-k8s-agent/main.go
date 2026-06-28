@@ -129,21 +129,16 @@ func run() error {
 		defer api.Shutdown(context.Background())
 	}
 
-	var (
-		sources []source.Source
-		closers []func()
-	)
-	defer func() {
-		for i := len(closers) - 1; i >= 0; i-- {
-			closers[i]()
-		}
-	}()
+	var sources []source.Source
 
-	// When the control plane is enabled it owns the chat channels: a supervisor
-	// builds one live bridge per typed channel CRD, tokens resolved from the
-	// channel's SecretSource. onResolved fans each reconciliation out to the web
+	// The control plane owns all chat channels via typed CRDs. The supervisor
+	// builds one live bridge per channel CRD, resolving tokens from each
+	// channel's SecretSource. onResolved fans reconciliation out to the web
 	// channel registry and the supervisor.
-	var supervisor *channelsup.Supervisor
+	var (
+		supervisor  *channelsup.Supervisor
+		webResolver secrets.Resolver
+	)
 	onResolved := func(res controller.Resolved) {
 		logger.Info("control plane resolved",
 			"brains", len(res.Brains), "bindings", len(res.Bindings), "channels", len(res.Channels))
@@ -156,46 +151,23 @@ func run() error {
 		if err := runtime.SetBrains(ctx, brainSources); err != nil {
 			logger.Error("apply brains from control plane", "error", err)
 		}
-		webChannel.Apply(res)
+		webChannel.Apply(res, webResolver)
 		if supervisor != nil {
 			supervisor.Apply(res)
 		}
 	}
 
 	if cfg.controlPlaneEnabled() {
-		if secretKey, keyErr := requiredSecret("AURORA_SECRET_KEY", "AURORA_SECRET_KEY_FILE"); keyErr != nil {
-			logger.Warn("AURORA_SECRET_KEY not set; channel CRDs will not start live bridges", "error", keyErr)
-		} else {
-			resolver := secrets.NewInPlace(secretKey)
-			provider.SetResolver(resolver)
-			supervisor = channelsup.New(runtime, resolver, provider, cfg.DataDir, stateKey,
-				cfg.TelegramBaseURL, logger)
-			sources = append(sources, supervisor)
+		secretKey, err := requiredSecret("AURORA_SECRET_KEY", "AURORA_SECRET_KEY_FILE")
+		if err != nil {
+			return fmt.Errorf("control plane requires AURORA_SECRET_KEY: %w", err)
 		}
-	} else {
-		// No control plane: the legacy env/file path builds a single client per
-		// configured source.
-		for _, kind := range cfg.Sources {
-			var (
-				src    source.Source
-				closer func()
-			)
-			switch kind {
-			case "telegram":
-				src, closer, err = buildTelegram(ctx, cfg, runtime, provider, stateKey, logger)
-			case "slack":
-				src, closer, err = buildSlack(ctx, cfg, runtime, provider, stateKey, logger)
-			default:
-				return fmt.Errorf("unknown source %q (want telegram or slack)", kind)
-			}
-			if err != nil {
-				return err
-			}
-			sources = append(sources, src)
-			if closer != nil {
-				closers = append(closers, closer)
-			}
-		}
+		webResolver = secrets.NewInPlace(secretKey)
+		resolver := webResolver
+		provider.SetResolver(resolver)
+		supervisor = channelsup.New(runtime, resolver, provider, cfg.DataDir, stateKey,
+			cfg.TelegramBaseURL, logger)
+		sources = append(sources, supervisor)
 	}
 
 	switch cfg.ControlPlane {
@@ -219,13 +191,13 @@ func run() error {
 
 	ready.Store(true)
 	if len(sources) == 0 {
-		// Headless: no chat channels and no control plane. Serve the HTTP API (if
-		// enabled) and block until shutdown.
+		// Headless: no control plane configured. Serve the HTTP API (if enabled)
+		// and block until shutdown.
 		logger.Info("Aurora agent started (headless)", "version", version)
 		<-ctx.Done()
 		return nil
 	}
 	logger.Info("Aurora agent started", "version", version,
-		"sources", cfg.Sources, "control_plane", cfg.ControlPlane, "channel_supervisor", supervisor != nil)
+		"control_plane", cfg.ControlPlane, "channel_supervisor", supervisor != nil)
 	return source.Run(ctx, logger, sources...)
 }

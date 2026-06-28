@@ -1,24 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../api";
+import { api, UnauthorizedError } from "../api";
 import type { Decision, JournalEntry, TaskSnapshot } from "../types";
 
-// RunPanel shows a single run's journal, pending tasks (HITL approvals), and
-// run controls (stop / retry). It is driven by a runID selected in the graph.
 export function RunPanel({
   runID,
   tick,
   onChanged,
+  onUnauthorized,
 }: {
   runID: string;
-  // tick bumps whenever the thread's SSE stream emits, so the panel refetches
-  // journal + pending tasks live without reselecting the node.
   tick?: number;
   onChanged?: () => void;
+  onUnauthorized?: () => void;
 }) {
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [tasks, setTasks] = useState<TaskSnapshot[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const handleError = useCallback(
+    (e: unknown) => {
+      if (e instanceof UnauthorizedError) {
+        onUnauthorized?.();
+      } else {
+        setError(String(e));
+      }
+    },
+    [onUnauthorized],
+  );
 
   const reload = useCallback(async () => {
     try {
@@ -27,9 +36,9 @@ export function RunPanel({
       setTasks(t);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      handleError(e);
     }
-  }, [runID]);
+  }, [runID, handleError]);
 
   useEffect(() => {
     void reload();
@@ -42,7 +51,7 @@ export function RunPanel({
       await reload();
       onChanged?.();
     } catch (e) {
-      setError(String(e));
+      handleError(e);
     } finally {
       setBusy(false);
     }

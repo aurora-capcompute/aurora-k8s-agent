@@ -209,7 +209,7 @@ func (s *Service) ensureConversation(ctx context.Context, user policy.User, chat
 }
 
 func (s *Service) newConversation(ctx context.Context, user policy.User, chatID int64) (state.Conversation, error) {
-	thread, err := s.runtime.CreateThread(user.Manifest)
+	thread, err := s.runtime.CreateThread(user.Manifest, nil)
 	if err != nil {
 		return state.Conversation{}, err
 	}

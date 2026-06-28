@@ -20,7 +20,6 @@ import (
 // message at the point of use.
 type Config struct {
 	LogLevel        slog.Level
-	PolicyPath      string
 	DataDir         string
 	TenantID        string
 	InstanceID      string
@@ -34,9 +33,6 @@ type Config struct {
 	ResourcesDir        string
 	ResourcesResync     time.Duration
 
-	// Sources lists the enabled chat sources for the no-control-plane path.
-	Sources []string
-
 	MCPServers map[string]mcp.ServerConfig
 	OCIOptions []oci.Option
 }
@@ -46,7 +42,6 @@ type Config struct {
 func loadConfig() (Config, error) {
 	cfg := Config{
 		LogLevel:            parseLogLevel(env("AURORA_LOG_LEVEL", "info")),
-		PolicyPath:          env("AURORA_POLICY_PATH", "/etc/aurora/policy.json"),
 		DataDir:             env("AURORA_DATA_DIR", "/data"),
 		TenantID:            env("AURORA_TENANT_ID", aurora.DefaultTenantID),
 		InstanceID:          env("AURORA_INSTANCE_ID", ""),
@@ -57,8 +52,7 @@ func loadConfig() (Config, error) {
 		ControllerNamespace: os.Getenv("AURORA_CONTROLLER_NAMESPACE"),
 		ResourcesDir:        strings.TrimSpace(os.Getenv("AURORA_RESOURCES_DIR")),
 		ResourcesResync:     30 * time.Second,
-		Sources:             sourceKinds(),
-		OCIOptions: ociOptionsFromEnv(),
+		OCIOptions:          ociOptionsFromEnv(),
 	}
 	if raw := strings.TrimSpace(os.Getenv("AURORA_RESOURCES_RESYNC")); raw != "" {
 		parsed, err := time.ParseDuration(raw)
@@ -75,7 +69,7 @@ func loadConfig() (Config, error) {
 	return cfg, nil
 }
 
-// Enabled reports whether a control plane (k8s or fs) owns the channels.
+// controlPlaneEnabled reports whether a control plane (k8s or fs) owns the channels.
 func (c Config) controlPlaneEnabled() bool {
 	return c.ControlPlane == "k8s" || c.ControlPlane == "fs"
 }
@@ -92,27 +86,4 @@ func controlPlaneKind() string {
 		return "k8s"
 	}
 	return "none"
-}
-
-// sourceKinds resolves the enabled chat sources from AURORA_SOURCES (a
-// comma-separated list, e.g. "telegram,slack"), falling back to the
-// single-channel AURORA_CHANNEL and then "telegram". "none" (or an empty list)
-// disables chat sources so the agent can run headless. Order is preserved;
-// duplicates are dropped.
-func sourceKinds() []string {
-	raw := env("AURORA_SOURCES", env("AURORA_CHANNEL", "telegram"))
-	seen := make(map[string]struct{})
-	var kinds []string
-	for _, part := range strings.Split(raw, ",") {
-		kind := strings.ToLower(strings.TrimSpace(part))
-		if kind == "" || kind == "none" {
-			continue
-		}
-		if _, dup := seen[kind]; dup {
-			continue
-		}
-		seen[kind] = struct{}{}
-		kinds = append(kinds, kind)
-	}
-	return kinds
 }

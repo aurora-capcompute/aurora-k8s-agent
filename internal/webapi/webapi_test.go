@@ -42,13 +42,20 @@ func (f *fakeRuntime) GetThread(id string) (aurora.ThreadSnapshot, error) {
 	return f.thread, nil
 }
 
-func (f *fakeRuntime) CreateThread(m aurora.Manifest) (aurora.ThreadSnapshot, error) {
+func (f *fakeRuntime) CreateThread(m aurora.Manifest, tags map[string]string) (aurora.ThreadSnapshot, error) {
 	f.lastManifest = m
 	return f.thread, nil
 }
 
 func (f *fakeRuntime) CreateRun(_ string, msg string, _ []aurora.CapabilityConfig) (aurora.RunSnapshot, error) {
 	f.lastMessage = msg
+	return f.run, nil
+}
+
+func (f *fakeRuntime) GetRun(id string) (aurora.RunSnapshot, error) {
+	if f.notFound {
+		return aurora.RunSnapshot{}, fmt.Errorf("%w: %s", aurora.ErrNotFound, id)
+	}
 	return f.run, nil
 }
 
@@ -175,7 +182,7 @@ func TestManifestRoutes(t *testing.T) {
 		Source:   "web",
 		Name:     "ops",
 		Resolved: binding.Resolved{Manifest: manifest, Digest: controller.Digest(manifest)},
-	}}})
+	}}}, nil)
 
 	fake := &fakeRuntime{
 		threads: []aurora.ThreadSummary{

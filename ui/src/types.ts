@@ -100,6 +100,11 @@ export interface AgentEvent {
   data: unknown;
 }
 
+export interface ProgressEvent {
+  run_id: string;
+  message: string;
+}
+
 export type TaskState =
   | "pending"
   | "approved"

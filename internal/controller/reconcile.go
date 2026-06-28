@@ -84,12 +84,15 @@ type Resolved struct {
 // ResolvedChannel groups a ready typed channel with the bindings that target it,
 // so a channel supervisor can construct one live bridge per channel CRD. Secrets
 // carries the channel's unresolved credential sources (keyed e.g. "botToken",
-// "appToken"); the supervisor holds the key and resolves them.
+// "appToken"); the supervisor holds the key and resolves them. Users carries
+// web-channel login credentials (unresolved); webchannel.Channel.Apply resolves
+// them with the same key.
 type ResolvedChannel struct {
 	Kind     string
 	Name     string
 	Source   string
 	Secrets  map[string]v1alpha1.SecretSource
+	Users    []v1alpha1.WebChannelUser // web channels only
 	Bindings []binding.Resolved
 }
 
@@ -117,7 +120,8 @@ type resolvedChannel struct {
 	kind     string
 	name     string
 	source   string
-	users    []string
+	users    []string                  // Telegram/Slack: access-control user IDs
+	webUsers []v1alpha1.WebChannelUser // Web: login credentials (unresolved)
 	scopes   []string
 	secrets  map[string]v1alpha1.SecretSource
 	bindings []binding.Resolved
@@ -255,6 +259,7 @@ func collectChannels(channels map[string]*resolvedChannel) []ResolvedChannel {
 			Name:     c.name,
 			Source:   c.source,
 			Secrets:  c.secrets,
+			Users:    c.webUsers,
 			Bindings: c.bindings,
 		})
 	}
@@ -311,9 +316,29 @@ func resolveChannels(in Inputs, out map[string]*resolvedChannel, status map[stri
 	}
 	for _, c := range in.WebChannels {
 		key := ChannelKey(v1alpha1.KindWebChannel, c.Name)
+		var chSecrets map[string]v1alpha1.SecretSource
+		if c.Spec.Token != nil {
+			if err := validateSecret("token", *c.Spec.Token); err != nil {
+				status[key] = v1alpha1.ChannelStatus{Message: fmt.Sprintf("invalid token: %v", err)}
+				continue
+			}
+			chSecrets = map[string]v1alpha1.SecretSource{"token": *c.Spec.Token}
+		}
+		failed := false
+		for i, u := range c.Spec.Users {
+			if err := validateSecret(fmt.Sprintf("users[%d].password", i), u.Password); err != nil {
+				status[key] = v1alpha1.ChannelStatus{Message: err.Error()}
+				failed = true
+				break
+			}
+		}
+		if failed {
+			continue
+		}
 		out[key] = &resolvedChannel{
 			kind: v1alpha1.KindWebChannel, name: c.Name, source: "web",
-			users: c.Spec.Users, scopes: c.Spec.Scopes,
+			webUsers: c.Spec.Users, scopes: c.Spec.Scopes,
+			secrets: chSecrets,
 		}
 		status[key] = v1alpha1.ChannelStatus{Ready: true}
 	}

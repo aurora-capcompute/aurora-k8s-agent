@@ -1,27 +1,15 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 
 	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/controller"
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/source"
-
-	tgchat "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/telegram"
-	tgpolicy "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/telegram/policy"
-	tgstate "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/telegram/state"
-	tgapi "github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/telegram"
-
-	slchat "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/slack"
-	slpolicy "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/slack/policy"
-	slstate "github.com/aurora-capcompute/aurora-k8s-agent/internal/chat/slack/state"
-	slapi "github.com/aurora-capcompute/aurora-k8s-agent/internal/transport/slack"
 
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -52,70 +40,4 @@ func buildController(cfg Config, provider aurora.DispatcherProvider, onResolved 
 	}
 	return controller.New(dyn, cfg.ControllerNamespace,
 		oci.NewRemotePuller(cfg.OCIOptions...), provider, onResolved, logger), nil
-}
-
-func buildTelegram(
-	ctx context.Context,
-	cfg Config,
-	runtime aurora.Runtime,
-	provider aurora.DispatcherProvider,
-	stateKey []byte,
-	logger *slog.Logger,
-) (source.Source, func(), error) {
-	token, err := requiredSecret("TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN_FILE")
-	if err != nil {
-		return nil, nil, err
-	}
-	policies, err := tgpolicy.Load(cfg.PolicyPath, provider)
-	if err != nil {
-		return nil, nil, err
-	}
-	bridgeStore, err := tgstate.Open(filepath.Join(cfg.DataDir, "telegram.db"), stateKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("open Telegram state: %w", err)
-	}
-	client := tgapi.NewClient(token)
-	if cfg.TelegramBaseURL != "" {
-		client.SetBaseURL(cfg.TelegramBaseURL)
-	}
-	identity, err := client.GetMe(ctx)
-	if err != nil {
-		bridgeStore.Close()
-		return nil, nil, fmt.Errorf("validate Telegram bot token: %w", err)
-	}
-	service := tgchat.New(runtime, client, bridgeStore, policies, identity, logger)
-	return service, func() { bridgeStore.Close() }, nil
-}
-
-func buildSlack(
-	_ context.Context,
-	cfg Config,
-	runtime aurora.Runtime,
-	provider aurora.DispatcherProvider,
-	stateKey []byte,
-	logger *slog.Logger,
-) (source.Source, func(), error) {
-	appToken, err := requiredSecret("SLACK_APP_TOKEN", "SLACK_APP_TOKEN_FILE")
-	if err != nil {
-		return nil, nil, err
-	}
-	botToken, err := requiredSecret("SLACK_BOT_TOKEN", "SLACK_BOT_TOKEN_FILE")
-	if err != nil {
-		return nil, nil, err
-	}
-	policies, err := slpolicy.Load(cfg.PolicyPath, provider)
-	if err != nil {
-		return nil, nil, err
-	}
-	bridgeStore, err := slstate.Open(filepath.Join(cfg.DataDir, "slack.db"), stateKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("open Slack state: %w", err)
-	}
-	client, err := slapi.NewClient(appToken, botToken)
-	if err != nil {
-		bridgeStore.Close()
-		return nil, nil, err
-	}
-	service := slchat.New(runtime, client, bridgeStore, policies, logger)
-	return service, func() { bridgeStore.Close() }, nil
 }

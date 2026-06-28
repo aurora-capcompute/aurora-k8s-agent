@@ -1,7 +1,5 @@
 import dagre from "dagre";
 import { type Edge, type Node } from "reactflow";
-import type { RunStatus } from "../types";
-
 // Shared layout + colour helpers for the call graph (per-run) and the thread
 // graph (whole-thread DAG). Both render reactflow nodes/edges laid out with
 // dagre, so the wiring lives here once.
@@ -18,7 +16,7 @@ export const STATUS_COLOR: Record<string, string> = {
   interrupted: "#455a64",
 };
 
-export function statusColor(status: RunStatus): string {
+export function statusColor(status: string): string {
   return STATUS_COLOR[status] ?? "#455a64";
 }
 
@@ -28,12 +26,18 @@ export const NODE_H = 64;
 // layout positions nodes left-to-right with dagre and returns them with
 // reactflow-style top-left positions. Edges are passed through unchanged but
 // fed to dagre so ranks honour the connectivity.
-export function layout(nodes: Node[], edges: Edge[]): Node[] {
+export function layout(
+  nodes: Node[],
+  edges: Edge[],
+  dir: "LR" | "TB" = "LR",
+  nodeW = NODE_W,
+  nodeH = NODE_H,
+): Node[] {
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "LR", nodesep: 24, ranksep: 64 });
+  g.setGraph({ rankdir: dir, nodesep: 20, ranksep: 48 });
   g.setDefaultEdgeLabel(() => ({}));
   for (const node of nodes) {
-    g.setNode(node.id, { width: NODE_W, height: NODE_H });
+    g.setNode(node.id, { width: nodeW, height: nodeH });
   }
   for (const edge of edges) {
     g.setEdge(edge.source, edge.target);
@@ -43,14 +47,14 @@ export function layout(nodes: Node[], edges: Edge[]): Node[] {
     const pos = g.node(node.id);
     return {
       ...node,
-      position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 },
+      position: { x: pos.x - nodeW / 2, y: pos.y - nodeH / 2 },
     };
   });
 }
 
 // nodeStyle is the shared box styling; selected nodes get a focus ring.
 export function nodeStyle(
-  status: RunStatus,
+  status: string,
   selected: boolean,
 ): React.CSSProperties {
   return {

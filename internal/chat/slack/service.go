@@ -125,7 +125,7 @@ func (s *Service) ensureConversation(ctx context.Context, user policy.User, chan
 }
 
 func (s *Service) newConversation(ctx context.Context, user policy.User, channelID string) (state.Conversation, error) {
-	thread, err := s.runtime.CreateThread(user.Manifest)
+	thread, err := s.runtime.CreateThread(user.Manifest, nil)
 	if err != nil {
 		return state.Conversation{}, err
 	}

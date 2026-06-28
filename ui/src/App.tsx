@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "./api";
+import { api, UnauthorizedError } from "./api";
 import type { ManifestInfo, ThreadSummary } from "./types";
+import { Login } from "./components/Login";
 import { ThreadView } from "./components/ThreadView";
 
 export default function App() {
@@ -9,23 +10,45 @@ export default function App() {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [thread, setThread] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsLogin, setNeedsLogin] = useState(false);
+  const [loading, setLoading] = useState(true);
+  // Bumped after a successful login to re-trigger manifest loading.
+  const [loginKey, setLoginKey] = useState(0);
+
+  const onUnauthorized = useCallback(() => setNeedsLogin(true), []);
 
   useEffect(() => {
+    setLoading(true);
     api
       .manifests()
       .then((m) => {
-        setManifests(m);
-        if (m.length > 0) setManifest((cur) => cur ?? m[0].name);
+        const ms = m ?? [];
+        setNeedsLogin(false);
+        setManifests(ms);
+        if (ms.length > 0) setManifest((cur) => cur ?? ms[0].name);
       })
-      .catch((e) => setError(String(e)));
-  }, []);
+      .catch((e) => {
+        if (e instanceof UnauthorizedError) {
+          setNeedsLogin(true);
+        } else {
+          setError(String(e));
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [loginKey]);
 
-  const loadThreads = useCallback((name: string) => {
-    api
-      .manifestThreads(name)
-      .then(setThreads)
-      .catch((e) => setError(String(e)));
-  }, []);
+  const loadThreads = useCallback(
+    (name: string) => {
+      api
+        .manifestThreads(name)
+        .then((t) => setThreads(t ?? []))
+        .catch((e) => {
+          if (e instanceof UnauthorizedError) onUnauthorized();
+          else setError(String(e));
+        });
+    },
+    [onUnauthorized],
+  );
 
   useEffect(() => {
     if (manifest) {
@@ -41,9 +64,29 @@ export default function App() {
       loadThreads(manifest);
       setThread(created.id);
     } catch (e) {
-      setError(String(e));
+      if (e instanceof UnauthorizedError) onUnauthorized();
+      else setError(String(e));
     }
   };
+
+  if (loading) {
+    return (
+      <div className="login-wrap">
+        <div className="login-loading">Loading…</div>
+      </div>
+    );
+  }
+
+  if (needsLogin) {
+    return (
+      <Login
+        onLogin={() => {
+          setNeedsLogin(false);
+          setLoginKey((k) => k + 1);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="app">
@@ -87,7 +130,7 @@ export default function App() {
       <main className="pane main">
         {error && <div className="error">{error}</div>}
         {thread ? (
-          <ThreadView threadID={thread} />
+          <ThreadView threadID={thread} onUnauthorized={onUnauthorized} />
         ) : (
           <div className="empty center">Select or create a thread.</div>
         )}

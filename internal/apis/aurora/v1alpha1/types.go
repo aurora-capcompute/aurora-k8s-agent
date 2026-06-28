@@ -113,11 +113,23 @@ type TelegramChannelSpec struct {
 	Scopes   []string     `json:"scopes"`
 }
 
-// WebChannelSpec is the HTTP-driven web channel: no transport secret. Users and
-// scopes are optional (the web channel is driven over the API).
+// WebChannelUser is one login credential stored sealed in the channel CRD.
+// The name is in plaintext; the password is a SecretSource (typically
+// inPlaceEncrypted). POST /api/login validates the pair and returns the channel
+// bearer token on success.
+type WebChannelUser struct {
+	Name     string      `json:"name"`
+	Password SecretSource `json:"password"`
+}
+
+// WebChannelSpec is the HTTP-driven web channel. Token is the bearer credential
+// that gates all web API requests. Users are login credentials: clients that
+// don't know the token can exchange a username/password via POST /api/login to
+// receive it.
 type WebChannelSpec struct {
-	Users  []string `json:"users,omitempty"`
-	Scopes []string `json:"scopes,omitempty"`
+	Token  *SecretSource    `json:"token,omitempty"`
+	Users  []WebChannelUser `json:"users,omitempty"`
+	Scopes []string         `json:"scopes,omitempty"`
 }
 
 // ChannelStatus reports validation state for any channel kind.
