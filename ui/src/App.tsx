@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, UnauthorizedError } from "./api";
 import type { ManifestInfo, ThreadSummary } from "./types";
 import { Login } from "./components/Login";
+import { Sidebar } from "./components/Sidebar";
 import { ThreadView } from "./components/ThreadView";
 
 export default function App() {
@@ -9,13 +10,12 @@ export default function App() {
   const [manifest, setManifest] = useState<string | null>(null);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [thread, setThread] = useState<string | null>(null);
+  const [drawerRunID, setDrawerRunID] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsLogin, setNeedsLogin] = useState(false);
   const [loading, setLoading] = useState(true);
-  // Bumped after a successful login to re-trigger manifest loading.
   const [loginKey, setLoginKey] = useState(0);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerRunID, setDrawerRunID] = useState<string | null>(null);
 
   const onUnauthorized = useCallback(() => setNeedsLogin(true), []);
 
@@ -30,11 +30,8 @@ export default function App() {
         if (ms.length > 0) setManifest((cur) => cur ?? ms[0].name);
       })
       .catch((e) => {
-        if (e instanceof UnauthorizedError) {
-          setNeedsLogin(true);
-        } else {
-          setError(String(e));
-        }
+        if (e instanceof UnauthorizedError) setNeedsLogin(true);
+        else setError(String(e));
       })
       .finally(() => setLoading(false));
   }, [loginKey]);
@@ -55,6 +52,8 @@ export default function App() {
   useEffect(() => {
     if (manifest) {
       setThread(null);
+      setDrawerOpen(false);
+      setDrawerRunID(null);
       loadThreads(manifest);
     }
   }, [manifest, loadThreads]);
@@ -65,10 +64,34 @@ export default function App() {
       const created = await api.createThread(manifest);
       loadThreads(manifest);
       setThread(created.id);
+      setDrawerOpen(false);
+      setDrawerRunID(null);
     } catch (e) {
       if (e instanceof UnauthorizedError) onUnauthorized();
       else setError(String(e));
     }
+  };
+
+  const handleManifestChange = (name: string) => {
+    setManifest(name);
+    setDrawerOpen(false);
+    setDrawerRunID(null);
+  };
+
+  const handleThreadSelect = (id: string) => {
+    setThread(id);
+    setDrawerOpen(false);
+    setDrawerRunID(null);
+  };
+
+  const openDrawer = (runID: string) => {
+    setDrawerRunID(runID);
+    setDrawerOpen(true);
+  };
+
+  const toggleDrawer = () => {
+    setDrawerOpen((o) => !o);
+    // Don't clear drawerRunID — keeps the last-viewed run selected.
   };
 
   if (loading) {
@@ -91,56 +114,28 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <aside className="pane manifests">
-        <h2>Manifests</h2>
-        {manifests.length === 0 && <div className="empty">None bound.</div>}
-        {manifests.map((m) => (
-          <button
-            key={m.name}
-            className={m.name === manifest ? "row active" : "row"}
-            onClick={() => setManifest(m.name)}
-          >
-            <div className="row-title">{m.name}</div>
-            <div className="row-sub">{m.brain}</div>
-          </button>
-        ))}
-      </aside>
-
-      <section className="pane threads">
-        <div className="threads-head">
-          <h2>Threads</h2>
-          <button disabled={!manifest} onClick={() => void newThread()}>
-            + New
-          </button>
-        </div>
-        {threads.length === 0 && <div className="empty">No threads.</div>}
-        {threads.map((t) => (
-          <button
-            key={t.id}
-            className={t.id === thread ? "row active" : "row"}
-            onClick={() => setThread(t.id)}
-          >
-            <div className="row-title">{t.title || t.id}</div>
-            <div className="row-sub">
-              {t.run_count} run{t.run_count === 1 ? "" : "s"}
-            </div>
-          </button>
-        ))}
-      </section>
-
-      <main className="pane main">
+    <div className="app-shell">
+      <Sidebar
+        manifests={manifests}
+        selectedManifest={manifest}
+        onManifestChange={handleManifestChange}
+        threads={threads}
+        selectedThread={thread}
+        onThreadSelect={handleThreadSelect}
+        onNewThread={() => void newThread()}
+        onReloadThreads={() => {
+          if (manifest) loadThreads(manifest);
+        }}
+      />
+      <div className="main-pane">
         {error && <div className="error">{error}</div>}
         {thread ? (
           <ThreadView
             threadID={thread}
             drawerOpen={drawerOpen}
             drawerRunID={drawerRunID}
-            onToggleDrawer={() => setDrawerOpen((o) => !o)}
-            onRunClick={(runID) => {
-              setDrawerRunID(runID);
-              setDrawerOpen(true);
-            }}
+            onToggleDrawer={toggleDrawer}
+            onRunClick={openDrawer}
             onDrawerClose={() => setDrawerOpen(false)}
             onUnauthorized={onUnauthorized}
             onReloadThreads={() => {
@@ -148,9 +143,13 @@ export default function App() {
             }}
           />
         ) : (
-          <div className="empty center">Select or create a thread.</div>
+          <div className="empty-state">
+            <div className="empty-state-text">
+              Select a thread or create one.
+            </div>
+          </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }
