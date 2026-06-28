@@ -40,6 +40,8 @@ export function ThreadView({
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<Map<string, string[]>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
+  const onReloadThreadsRef = useRef(onReloadThreads);
+  useEffect(() => { onReloadThreadsRef.current = onReloadThreads; }, [onReloadThreads]);
 
   const handleError = useCallback(
     (e: unknown) => {
@@ -91,12 +93,12 @@ export function ThreadView({
       () => {
         setTick((t) => t + 1);
         void reload();
-        onReloadThreads?.();
+        onReloadThreadsRef.current?.();
       },
       onProgress,
     );
     return unsubscribe;
-  }, [threadID, reload, onProgress, onReloadThreads]);
+  }, [threadID, reload, onProgress]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

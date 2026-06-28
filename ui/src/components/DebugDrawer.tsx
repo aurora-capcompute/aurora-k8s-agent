@@ -20,7 +20,7 @@ export function DebugDrawer({
 }) {
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [tasks, setTasks] = useState<TaskSnapshot[]>([]);
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -92,8 +92,10 @@ export function DebugDrawer({
 
   const pending = tasks.filter((t) => t.state === "pending");
 
-  const toggleExpand = (index: number) =>
-    setExpanded((cur) => (cur === index ? null : index));
+  const toggleExpand = (index: number, revision: number) => {
+    const key = `${index}-${revision}`;
+    setExpanded((cur) => (cur === key ? null : key));
+  };
 
   return (
     <div className={`debug-drawer${open ? " open" : ""}`}>
@@ -184,9 +186,9 @@ export function DebugDrawer({
                 <div key={`${entry.index}-${entry.revision}`}>
                   <button
                     className={`journal-row${
-                      expanded === entry.index ? " expanded" : ""
+                      expanded === `${entry.index}-${entry.revision}` ? " expanded" : ""
                     }`}
-                    onClick={() => toggleExpand(entry.index)}
+                    onClick={() => toggleExpand(entry.index, entry.revision)}
                   >
                     <span
                       className={`badge badge-${entry.outcome.status}`}
@@ -201,7 +203,7 @@ export function DebugDrawer({
                       </span>
                     )}
                   </button>
-                  {expanded === entry.index && (
+                  {expanded === `${entry.index}-${entry.revision}` && (
                     <div className="journal-detail">
                       {entry.call.args !== undefined && (
                         <pre className="json">
