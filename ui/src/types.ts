@@ -60,7 +60,7 @@ export interface JournalEntry {
 export interface ThreadGraphRun {
   run_id: string;
   message: string;
-  parent_run_id?: string;
+  parent_run_id?: string;  // set for delegated child runs
   status: RunStatus;
   answer?: string;
   error?: string;

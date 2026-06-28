@@ -87,6 +87,8 @@ export const api = {
     post<RunSnapshot>(`/api/threads/${threadID}/messages`, { message }),
   retryRun: (runID: string, mode: "resume" | "restart") =>
     post<RunSnapshot>(`/api/runs/${runID}/retry`, { mode }),
+  replayRun: (runID: string, from: number) =>
+    post<RunSnapshot>(`/api/runs/${runID}/replay`, { from }),
   stopRun: (runID: string) => post<RunSnapshot>(`/api/runs/${runID}/stop`),
   journal: (runID: string) => get<JournalEntry[]>(`/api/runs/${runID}/journal`),
   tasks: (runID: string) => get<TaskSnapshot[]>(`/api/runs/${runID}/tasks`),

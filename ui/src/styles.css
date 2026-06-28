@@ -270,6 +270,16 @@ button {
   font-family: ui-monospace, 'Cascadia Mono', monospace;
 }
 
+.replay-btn {
+  margin-left: 10px;
+  font-size: 11px;
+  color: #6a1b9a;
+  opacity: 0.8;
+}
+.replay-btn:hover {
+  opacity: 1;
+}
+
 .journal .outcome-failed > details > summary code {
   color: #c62828;
 }

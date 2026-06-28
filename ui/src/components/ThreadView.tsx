@@ -129,6 +129,29 @@ export function ThreadView({
     setTab("graph");
   };
 
+  const replay = useCallback(
+    async (runID: string, from: number) => {
+      setBusy(true);
+      try {
+        await api.replayRun(runID, from);
+        await reload();
+      } catch (e) {
+        handleError(e);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [reload, handleError],
+  );
+
+  const onReplayEntry = useCallback(
+    (entryIndex: number) => {
+      if (!focusRun) return;
+      void replay(focusRun, entryIndex);
+    },
+    [focusRun, replay],
+  );
+
   return (
     <div className="thread">
       <div className="tabs">
@@ -171,6 +194,16 @@ export function ThreadView({
                   </button>{" "}
                   <StatusBadge status={run.status} /> · rev{" "}
                   {run.current_revision}
+                  {TERMINAL.has(run.status) && !run.parent_run_id && (
+                    <button
+                      className="link replay-btn"
+                      title="Replay this run from the beginning"
+                      disabled={busy}
+                      onClick={() => void replay(run.run_id, 0)}
+                    >
+                      ↺ replay
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -200,7 +233,16 @@ export function ThreadView({
           <div className="graph-wrap">
             <div className="graph-split">
               <div className="graph-canvas">
-                <CallGraph entries={focusEntries ?? []} />
+                <CallGraph
+                  entries={focusEntries ?? []}
+                  onReplay={
+                    focusRun &&
+                    !(graph?.runs ?? []).find((r) => r.run_id === focusRun)
+                      ?.parent_run_id
+                      ? onReplayEntry
+                      : undefined
+                  }
+                />
               </div>
               {focusRun && (
                 <div className="graph-side">

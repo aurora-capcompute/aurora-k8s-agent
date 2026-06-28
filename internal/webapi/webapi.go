@@ -47,6 +47,7 @@ func Handler(runtime aurora.Runtime, channel *webchannel.Channel) http.Handler {
 	mux.HandleFunc("POST /api/threads/{id}/messages", h.sendMessage)
 	mux.HandleFunc("POST /api/runs/{id}/stop", h.stopRun)
 	mux.HandleFunc("POST /api/runs/{id}/retry", h.retryRun)
+	mux.HandleFunc("POST /api/runs/{id}/replay", h.replayRun)
 	mux.HandleFunc("POST /api/tasks/{id}/resolve", h.resolveTask)
 
 	return mux
@@ -340,6 +341,23 @@ func (h *handler) retryRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	run, err := h.runtime.Retry(runID, req.Mode, req.Overrides)
+	writeJSON(w, run, err)
+}
+
+type replayRequest struct {
+	From int `json:"from"`
+}
+
+func (h *handler) replayRun(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	if _, ok := h.runAccess(w, r, runID); !ok {
+		return
+	}
+	var req replayRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	run, err := h.runtime.ReplayFrom(runID, req.From)
 	writeJSON(w, run, err)
 }
 
