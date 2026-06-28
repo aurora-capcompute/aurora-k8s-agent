@@ -52,12 +52,22 @@ export function DebugDrawer({
     setTasks([]);
     setExpanded(null);
     setError(null);
-    void reload();
-  }, [reload]);
+    if (!runID) return;
+    let stale = false;
+    void (async () => {
+      try {
+        const [j, t] = await Promise.all([api.journal(runID), api.tasks(runID)]);
+        if (!stale) { setJournal(j); setTasks(t); setError(null); }
+      } catch (e) {
+        if (!stale) handleError(e);
+      }
+    })();
+    return () => { stale = true; };
+  }, [runID, handleError]);
 
   useEffect(() => {
-    void reload();
-  }, [reload, tick]);
+    if (runID) void reload();
+  }, [tick, runID, reload]);
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
