@@ -110,6 +110,7 @@ export function ThreadView({
     try {
       await api.sendMessage(threadID, message);
       await reload();
+      onReloadThreads?.();
     } catch (e) {
       handleError(e);
     } finally {
