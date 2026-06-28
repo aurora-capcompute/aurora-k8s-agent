@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -21,7 +21,7 @@ function nid(index: number, revision: number): string {
   return `p${index}r${revision}`;
 }
 
-function build(entries: JournalEntry[]): { nodes: Node[]; edges: Edge[] } {
+function build(entries: JournalEntry[], interactive: boolean): { nodes: Node[]; edges: Edge[] } {
   if (!entries || entries.length === 0) return { nodes: [], edges: [] };
 
   const byIndex = new Map<number, JournalEntry[]>();
@@ -75,7 +75,7 @@ function build(entries: JournalEntry[]): { nodes: Node[]; edges: Edge[] } {
           padding: "6px 8px",
           background: "#fff",
           width: NODE_W,
-          cursor: "default",
+          cursor: interactive ? "pointer" : "default",
         },
       });
 
@@ -113,19 +113,36 @@ function build(entries: JournalEntry[]): { nodes: Node[]; edges: Edge[] } {
   return { nodes: layout(nodes, edges, "LR", NODE_W, NODE_H), edges };
 }
 
-export function CallGraph({ entries }: { entries: JournalEntry[] }) {
-  const { nodes, edges } = useMemo(() => build(entries), [entries]);
+export function CallGraph({
+  entries,
+  onNodeClick,
+}: {
+  entries: JournalEntry[];
+  onNodeClick?: (index: number, revision: number) => void;
+}) {
+  const { nodes, edges } = useMemo(
+    () => build(entries, !!onNodeClick),
+    [entries, onNodeClick],
+  );
+
+  const handleNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      const m = /^p(\d+)r(\d+)$/.exec(node.id);
+      if (m) onNodeClick?.(parseInt(m[1], 10), parseInt(m[2], 10));
+    },
+    [onNodeClick],
+  );
 
   if (!entries || entries.length === 0 || nodes.length === 0) {
     return (
-      <div className="empty" style={{ margin: "auto", paddingTop: 32 }}>
+      <div style={{ margin: "auto", paddingTop: 32, color: "var(--text-tertiary)", fontSize: 13, textAlign: "center" }}>
         No tool calls recorded yet.
       </div>
     );
   }
 
   return (
-    <div style={{ height: "100%", minHeight: 360 }}>
+    <div style={{ height: "100%" }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -134,6 +151,7 @@ export function CallGraph({ entries }: { entries: JournalEntry[] }) {
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
+        onNodeClick={onNodeClick ? handleNodeClick : undefined}
       >
         <Background />
         <Controls showInteractive={false} />

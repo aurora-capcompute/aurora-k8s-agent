@@ -115,6 +115,10 @@ func (p *Provider) IsSubset(name string, parent, child json.RawMessage) error {
 	return p.registry.IsSubset(name, parent, child)
 }
 
+func (p *Provider) IsCognition(name string) bool {
+	return p.registry.IsCognition(name)
+}
+
 func (p *Provider) NewDispatcher(
 	ctx context.Context,
 	_ aurora.RunContext,
@@ -130,6 +134,11 @@ func (p *Provider) NewDispatcher(
 		entries = make([]registry.Entry, 0, len(manifest.Capabilities))
 		for _, capability := range manifest.Capabilities {
 			settings := entry.caps[capability.Name]
+			if len(settings) == 0 {
+				// Child-only capabilities (not present in root) aren't warmed up;
+				// fall back to the already-normalized settings from the manifest.
+				settings = capability.Settings
+			}
 			entries = append(entries, registry.Entry{Name: capability.Name, Settings: settings})
 		}
 	} else {

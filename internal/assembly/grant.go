@@ -64,8 +64,16 @@ func buildChildren(children []v1alpha1.ChildSpec, bindingName, artifactDigest st
 	return out, nil
 }
 
+// cognitionChecker is an optional interface for providers that classify
+// capabilities as cognition (brain-driving) vs operational (tool).
+type cognitionChecker interface {
+	IsCognition(name string) bool
+}
+
 // nodeCaps resolves one node's capabilities via provider.Normalize. Optional
 // capabilities that Normalize rejects are skipped; required ones fail.
+// Cognition capabilities (e.g. openai.chat) are marked Hidden so that
+// visibleCapabilities excludes them from the brain's operational tool list.
 func nodeCaps(caps []v1alpha1.Capability, provider aurora.DispatcherProvider) ([]aurora.CapabilityConfig, error) {
 	var out []aurora.CapabilityConfig
 	for _, c := range caps {
@@ -77,7 +85,11 @@ func nodeCaps(caps []v1alpha1.Capability, provider aurora.DispatcherProvider) ([
 			}
 			return nil, fmt.Errorf("capability %q: %w", c.Name, err)
 		}
-		out = append(out, aurora.CapabilityConfig{Name: c.Name, Settings: normalized})
+		hidden := false
+		if cc, ok := provider.(cognitionChecker); ok {
+			hidden = cc.IsCognition(c.Name)
+		}
+		out = append(out, aurora.CapabilityConfig{Name: c.Name, Settings: normalized, Hidden: hidden})
 	}
 	return out, nil
 }

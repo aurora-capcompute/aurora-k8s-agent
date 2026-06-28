@@ -19,7 +19,7 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; }
+body { margin: 0; overflow-x: hidden; }
 
 /* ── App shell ────────────────────────────────────────────────── */
 .app-shell {
@@ -36,6 +36,35 @@ body { margin: 0; }
   display: flex;
   flex-direction: column;
   background: var(--surface);
+  overflow: hidden;
+  transition: width 200ms ease;
+}
+
+.sidebar.collapsed { width: 40px; }
+.sidebar.collapsed .sidebar-main { display: none; }
+
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  flex-shrink: 0;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  width: 100%;
+}
+
+.sidebar-toggle:hover { background: var(--bg); color: var(--text); }
+
+.sidebar-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -439,18 +468,14 @@ body { margin: 0; }
 
 /* ── Debug drawer ─────────────────────────────────────────────── */
 .debug-drawer {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 420px;
+  position: fixed;
+  inset: 0;
   background: var(--surface);
-  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   transform: translateX(100%);
   transition: transform 200ms ease;
-  z-index: 10;
+  z-index: 50;
 }
 
 .debug-drawer.open { transform: translateX(0); }
@@ -502,7 +527,26 @@ body { margin: 0; }
 
 .drawer-body {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+.drawer-left {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
   overflow-y: auto;
+}
+
+.drawer-right {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: var(--bg);
 }
 
 .drawer-controls {
@@ -540,13 +584,6 @@ body { margin: 0; }
 
 .drawer-section:last-child { border-bottom: none; }
 
-.drawer-graph {
-  height: 260px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-  margin-top: 4px;
-}
 
 /* ── Journal list ─────────────────────────────────────────────── */
 .journal-list {
@@ -596,6 +633,13 @@ body { margin: 0; }
 }
 
 .journal-detail { margin: 2px 0 4px; }
+
+.child-msg {
+  font-weight: 400;
+  text-transform: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
 
 .drawer-empty-sm {
   font-size: 12px;

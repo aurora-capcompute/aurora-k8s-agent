@@ -125,10 +125,10 @@ export function ThreadView({
       ? graph.title
       : threadID.slice(0, 20);
 
-  // Default the drawer to the most recent run when none is explicitly selected.
-  const runs = graph?.runs ?? [];
+  // Default the drawer to the most recent root run when none is explicitly selected.
+  const rootRuns = (graph?.runs ?? []).filter((r) => !r.parent_run_id);
   const activeDrawerRunID =
-    drawerRunID ?? (runs.length > 0 ? runs[runs.length - 1].run_id : null);
+    drawerRunID ?? (rootRuns.length > 0 ? rootRuns[rootRuns.length - 1].run_id : null);
 
   return (
     <div className="thread-shell">
@@ -146,10 +146,10 @@ export function ThreadView({
         <div className="transcript">
           <div className="transcript-inner">
             {error && <div className="error">{error}</div>}
-            {(graph?.runs ?? []).length === 0 && (
+            {rootRuns.length === 0 && (
               <div className="transcript-empty">Send a message to start.</div>
             )}
-            {(graph?.runs ?? []).map((run) => (
+            {rootRuns.map((run) => (
               <div key={run.run_id} className="exchange">
                 <div className="msg user">{run.message}</div>
 

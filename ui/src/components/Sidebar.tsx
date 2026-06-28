@@ -20,6 +20,8 @@ export function Sidebar({
   onThreadSelect,
   onNewThread,
   onReloadThreads,
+  collapsed,
+  onToggle,
 }: {
   manifests: ManifestInfo[];
   selectedManifest: string | null;
@@ -29,6 +31,8 @@ export function Sidebar({
   onThreadSelect: (id: string) => void;
   onNewThread: () => void;
   onReloadThreads: () => void;
+  collapsed?: boolean;
+  onToggle?: () => void;
 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -53,9 +57,16 @@ export function Sidebar({
   }, [onReloadThreads]);
 
   const current = manifests.find((m) => m.name === selectedManifest);
+  const sorted = [...threads].sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  );
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${collapsed ? " collapsed" : ""}`}>
+      <button className="sidebar-toggle" onClick={onToggle} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+        {collapsed ? "»" : "«"}
+      </button>
+      <div className="sidebar-main">
       <div className="sidebar-top">
         {manifests.length <= 1 ? (
           <div className="manifest-label">
@@ -98,10 +109,10 @@ export function Sidebar({
       </div>
 
       <div className="thread-list">
-        {threads.length === 0 && (
+        {sorted.length === 0 && (
           <div className="sidebar-empty">No threads yet.</div>
         )}
-        {threads.map((t) => (
+        {sorted.map((t) => (
           <button
             key={t.id}
             className={`thread-item${t.id === selectedThread ? " active" : ""}`}
@@ -125,6 +136,7 @@ export function Sidebar({
             </div>
           </button>
         ))}
+      </div>
       </div>
     </aside>
   );

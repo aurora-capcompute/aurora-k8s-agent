@@ -12,6 +12,7 @@ export default function App() {
   const [thread, setThread] = useState<string | null>(null);
   const [drawerRunID, setDrawerRunID] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsLogin, setNeedsLogin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -126,6 +127,8 @@ export default function App() {
         onReloadThreads={() => {
           if (manifest) loadThreads(manifest);
         }}
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((c) => !c)}
       />
       <div className="main-pane">
         {error && <div className="error">{error}</div>}
