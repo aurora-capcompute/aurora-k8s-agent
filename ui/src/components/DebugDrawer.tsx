@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, UnauthorizedError } from "../api";
 import type { Decision, JournalEntry, TaskSnapshot } from "../types";
 import { CallGraph } from "./CallGraph";
@@ -65,9 +65,12 @@ export function DebugDrawer({
     return () => { stale = true; };
   }, [runID, handleError]);
 
+  const reloadRef = useRef(reload);
+  useEffect(() => { reloadRef.current = reload; }, [reload]);
+
   useEffect(() => {
-    if (runID) void reload();
-  }, [tick, runID, reload]);
+    void reloadRef.current();
+  }, [tick]);
 
   const act = async (fn: () => Promise<unknown>) => {
     setBusy(true);
