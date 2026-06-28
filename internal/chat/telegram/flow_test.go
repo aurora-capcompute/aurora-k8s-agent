@@ -43,11 +43,11 @@ type flowRuntime struct {
 	created bool
 }
 
-func (r *flowRuntime) CreateThread(manifest aurora.Manifest, tags map[string]string) (aurora.ThreadSnapshot, error) {
+func (r *flowRuntime) CreateThread(tags map[string]string) (aurora.ThreadSnapshot, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.thread = aurora.ThreadSnapshot{ThreadSummary: aurora.ThreadSummary{
-		ID: "thread-1", Manifest: manifest,
+		ID: "thread-1",
 	}}
 	return r.thread, nil
 }
@@ -65,7 +65,7 @@ func (r *flowRuntime) GetThread(string) (aurora.ThreadSnapshot, error) {
 
 func (r *flowRuntime) CreateRun(
 	threadID, message string,
-	overrides []aurora.CapabilityConfig,
+	_ aurora.Manifest,
 ) (aurora.RunSnapshot, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -93,7 +93,7 @@ func (r *flowRuntime) ResolveTask(string, string, aurora.Resolution) (aurora.Tas
 func (r *flowRuntime) Stop(string) (aurora.RunSnapshot, error) {
 	return aurora.RunSnapshot{Status: aurora.RunStopped}, nil
 }
-func (r *flowRuntime) Retry(string, aurora.RetryMode, []aurora.CapabilityConfig) (aurora.RunSnapshot, error) {
+func (r *flowRuntime) Retry(string, aurora.RetryMode) (aurora.RunSnapshot, error) {
 	return aurora.RunSnapshot{}, nil
 }
 func (r *flowRuntime) Subscribe(string) (aurora.Event, <-chan aurora.Event, func(), error) {

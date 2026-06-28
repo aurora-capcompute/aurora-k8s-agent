@@ -92,7 +92,7 @@ func (h *handler) threadAccess(w http.ResponseWriter, r *http.Request, threadID 
 		writeError(w, err)
 		return aurora.ThreadSnapshot{}, false
 	}
-	if !h.checkAccess(w, r, snap.Manifest.BindingRef) {
+	if !h.checkAccess(w, r, snap.Tags["binding_ref"]) {
 		return aurora.ThreadSnapshot{}, false
 	}
 	return snap, true
@@ -110,7 +110,7 @@ func (h *handler) runAccess(w http.ResponseWriter, r *http.Request, runID string
 		writeError(w, err)
 		return aurora.RunSnapshot{}, false
 	}
-	if !h.checkAccess(w, r, thread.Manifest.BindingRef) {
+	if !h.checkAccess(w, r, thread.Tags["binding_ref"]) {
 		return aurora.RunSnapshot{}, false
 	}
 	return run, true
@@ -184,7 +184,7 @@ func (h *handler) manifestThreads(w http.ResponseWriter, r *http.Request) {
 	}
 	threads := make([]aurora.ThreadSummary, 0)
 	for _, t := range h.runtime.ListThreads() {
-		if t.Manifest.BindingRef == name {
+		if t.Tags["binding_ref"] == name {
 			threads = append(threads, t)
 		}
 	}
@@ -197,15 +197,14 @@ func (h *handler) createManifestThread(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web channel not enabled", http.StatusNotFound)
 		return
 	}
-	manifest, ok := h.channel.Manifest(name)
-	if !ok {
+	if _, ok := h.channel.Manifest(name); !ok {
 		http.Error(w, "manifest not found", http.StatusNotFound)
 		return
 	}
 	if !h.checkAccess(w, r, name) {
 		return
 	}
-	snap, err := h.runtime.CreateThread(manifest, nil)
+	snap, err := h.runtime.CreateThread(map[string]string{"binding_ref": name})
 	writeJSON(w, snap, err)
 }
 
@@ -220,7 +219,7 @@ func (h *handler) listThreads(w http.ResponseWriter, r *http.Request) {
 	tok := extractToken(r)
 	filtered := make([]aurora.ThreadSummary, 0, len(all))
 	for _, t := range all {
-		if h.channel.HasAccess(t.Manifest.BindingRef, tok) {
+		if h.channel.HasAccess(t.Tags["binding_ref"], tok) {
 			filtered = append(filtered, t)
 		}
 	}
@@ -293,13 +292,13 @@ func (h *handler) createThread(w http.ResponseWriter, r *http.Request) {
 	if !h.checkAccess(w, r, manifest.BindingRef) {
 		return
 	}
-	snap, err := h.runtime.CreateThread(manifest, nil)
+	snap, err := h.runtime.CreateThread(map[string]string{"binding_ref": manifest.BindingRef})
 	writeJSON(w, snap, err)
 }
 
 type messageRequest struct {
-	Message   string                    `json:"message"`
-	Overrides []aurora.CapabilityConfig `json:"overrides,omitempty"`
+	Message  string           `json:"message"`
+	Manifest *aurora.Manifest `json:"manifest,omitempty"`
 }
 
 func (h *handler) sendMessage(w http.ResponseWriter, r *http.Request) {
@@ -312,7 +311,18 @@ func (h *handler) sendMessage(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	run, err := h.runtime.CreateRun(snap.ID, req.Message, req.Overrides)
+	var manifest aurora.Manifest
+	if bindingRef := snap.Tags["binding_ref"]; bindingRef != "" && h.channel != nil {
+		m, ok := h.channel.Manifest(bindingRef)
+		if !ok {
+			http.Error(w, "binding not found", http.StatusNotFound)
+			return
+		}
+		manifest = m
+	} else if req.Manifest != nil {
+		manifest = *req.Manifest
+	}
+	run, err := h.runtime.CreateRun(snap.ID, req.Message, manifest)
 	writeJSON(w, run, err)
 }
 
@@ -326,8 +336,7 @@ func (h *handler) stopRun(w http.ResponseWriter, r *http.Request) {
 }
 
 type retryRequest struct {
-	Mode      aurora.RetryMode          `json:"mode"`
-	Overrides []aurora.CapabilityConfig `json:"overrides,omitempty"`
+	Mode aurora.RetryMode `json:"mode"`
 }
 
 func (h *handler) retryRun(w http.ResponseWriter, r *http.Request) {
@@ -339,7 +348,7 @@ func (h *handler) retryRun(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	run, err := h.runtime.Retry(runID, req.Mode, req.Overrides)
+	run, err := h.runtime.Retry(runID, req.Mode)
 	writeJSON(w, run, err)
 }
 

@@ -42,12 +42,12 @@ func (f *fakeRuntime) GetThread(id string) (aurora.ThreadSnapshot, error) {
 	return f.thread, nil
 }
 
-func (f *fakeRuntime) CreateThread(m aurora.Manifest, tags map[string]string) (aurora.ThreadSnapshot, error) {
-	f.lastManifest = m
+func (f *fakeRuntime) CreateThread(tags map[string]string) (aurora.ThreadSnapshot, error) {
 	return f.thread, nil
 }
 
-func (f *fakeRuntime) CreateRun(_ string, msg string, _ []aurora.CapabilityConfig) (aurora.RunSnapshot, error) {
+func (f *fakeRuntime) CreateRun(_ string, msg string, m aurora.Manifest) (aurora.RunSnapshot, error) {
+	f.lastManifest = m
 	f.lastMessage = msg
 	return f.run, nil
 }
@@ -59,14 +59,13 @@ func (f *fakeRuntime) GetRun(id string) (aurora.RunSnapshot, error) {
 	return f.run, nil
 }
 
-func (f *fakeRuntime) Retry(_ string, mode aurora.RetryMode, _ []aurora.CapabilityConfig) (aurora.RunSnapshot, error) {
+func (f *fakeRuntime) Retry(_ string, mode aurora.RetryMode) (aurora.RunSnapshot, error) {
 	if f.conflict {
 		return aurora.RunSnapshot{}, fmt.Errorf("%w: cannot retry", aurora.ErrConflict)
 	}
 	f.lastMode = mode
 	return f.run, nil
 }
-
 
 func (f *fakeRuntime) Subscribe(string) (aurora.Event, <-chan aurora.Event, func(), error) {
 	return f.initial, f.events, func() {}, nil
@@ -108,9 +107,6 @@ func TestReadAndInteractiveRoutes(t *testing.T) {
 		rec := do(t, h, http.MethodPost, "/api/threads", `{"version":2,"brain":"kubernetes-agent"}`)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
-		}
-		if fake.lastManifest.Brain != "kubernetes-agent" {
-			t.Fatalf("manifest not decoded: %+v", fake.lastManifest)
 		}
 	})
 
@@ -187,10 +183,15 @@ func TestManifestRoutes(t *testing.T) {
 
 	fake := &fakeRuntime{
 		threads: []aurora.ThreadSummary{
-			{ID: "t1", Manifest: aurora.Manifest{Version: aurora.ManifestVersion, Brain: "kubernetes-agent", BindingRef: "ops"}},
-			{ID: "t2", Manifest: aurora.Manifest{Brain: "other"}}, // unrelated — no BindingRef
+			{ID: "t1", Tags: map[string]string{"binding_ref": "ops"}},
+			{ID: "t2"}, // unrelated — no binding_ref
 		},
-		thread: aurora.ThreadSnapshot{ThreadSummary: aurora.ThreadSummary{ID: "new"}},
+		// thread returned by CreateThread / GetThread; carries binding_ref so sendMessage
+		// can look up the channel manifest.
+		thread: aurora.ThreadSnapshot{ThreadSummary: aurora.ThreadSummary{
+			ID:   "new",
+			Tags: map[string]string{"binding_ref": "ops"},
+		}},
 	}
 	h := webapi.Handler(fake, ch)
 
@@ -212,8 +213,20 @@ func TestManifestRoutes(t *testing.T) {
 
 	t.Run("create thread under manifest", func(t *testing.T) {
 		rec := do(t, h, http.MethodPost, "/api/manifests/ops/threads", "")
-		if rec.Code != http.StatusOK || fake.lastManifest.Brain != "kubernetes-agent" {
-			t.Fatalf("status %d, manifest %+v", rec.Code, fake.lastManifest)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("send message uses channel manifest", func(t *testing.T) {
+		// The thread (ID "new") carries binding_ref="ops", so sendMessage should
+		// fetch the manifest from the channel and pass it to CreateRun.
+		rec := do(t, h, http.MethodPost, "/api/threads/new/messages", `{"message":"hello"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+		}
+		if fake.lastManifest.Brain != "kubernetes-agent" {
+			t.Fatalf("expected channel manifest, got %+v", fake.lastManifest)
 		}
 	})
 

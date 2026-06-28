@@ -80,7 +80,7 @@ func (s *Service) handlePrompt(
 	if err != nil {
 		return err
 	}
-	run, err := s.runtime.CreateRun(conversation.ThreadID, text, nil)
+	run, err := s.runtime.CreateRun(conversation.ThreadID, text, user.Manifest)
 	if err != nil {
 		_ = s.client.EditMessage(ctx, message.Chat.ID, sent.MessageID,
 			"❌ <b>Could not start session</b>\n"+escape(err.Error()), nil)
@@ -219,7 +219,7 @@ func (s *Service) retryActive(ctx context.Context, user policy.User, chatID int6
 		return s.send(ctx, chatID, "There is no session to retry.", nil)
 	}
 	run := thread.Runs[len(thread.Runs)-1]
-	_, err = s.runtime.Retry(run.ID, aurora.RetryResume, nil)
+	_, err = s.runtime.Retry(run.ID, aurora.RetryResume)
 	if err != nil {
 		return s.send(ctx, chatID, "Could not retry: "+escape(err.Error()), nil)
 	}

@@ -70,7 +70,7 @@ func (s *Service) handlePrompt(ctx context.Context, user policy.User, channelID,
 	if err != nil {
 		return err
 	}
-	run, err := s.runtime.CreateRun(conversation.ThreadID, text, nil)
+	run, err := s.runtime.CreateRun(conversation.ThreadID, text, user.Manifest)
 	if err != nil {
 		_ = s.client.UpdateMessage(ctx, channelID, ts, "❌ *Could not start* — "+err.Error(), nil)
 		return err

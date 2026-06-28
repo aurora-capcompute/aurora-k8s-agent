@@ -125,7 +125,7 @@ func (s *Service) ensureConversation(ctx context.Context, user policy.User, chan
 }
 
 func (s *Service) newConversation(ctx context.Context, user policy.User, channelID string) (state.Conversation, error) {
-	thread, err := s.runtime.CreateThread(user.Manifest, nil)
+	thread, err := s.runtime.CreateThread(nil)
 	if err != nil {
 		return state.Conversation{}, err
 	}
@@ -163,7 +163,7 @@ func (s *Service) Recover(ctx context.Context) error {
 			continue
 		}
 		if run.Status == aurora.RunInterrupted {
-			if _, err := s.runtime.Retry(run.ID, aurora.RetryResume, nil); err != nil {
+			if _, err := s.runtime.Retry(run.ID, aurora.RetryResume); err != nil {
 				s.logger.Warn("resume interrupted run", "run_id", run.ID, "error", err)
 			} else if current, getErr := s.runtime.GetRun(run.ID); getErr == nil {
 				run = current
