@@ -67,9 +67,6 @@ func (f *fakeRuntime) Retry(_ string, mode aurora.RetryMode, _ []aurora.Capabili
 	return f.run, nil
 }
 
-func (f *fakeRuntime) ReplayFrom(_ string, _ int) (aurora.RunSnapshot, error) {
-	return f.run, nil
-}
 
 func (f *fakeRuntime) Subscribe(string) (aurora.Event, <-chan aurora.Event, func(), error) {
 	return f.initial, f.events, func() {}, nil

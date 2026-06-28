@@ -21,10 +21,7 @@ function nid(index: number, revision: number): string {
   return `p${index}r${revision}`;
 }
 
-function build(
-  entries: JournalEntry[],
-  onReplay?: (entryIndex: number) => void,
-): { nodes: Node[]; edges: Edge[] } {
+function build(entries: JournalEntry[]): { nodes: Node[]; edges: Edge[] } {
   if (!entries || entries.length === 0) return { nodes: [], edges: [] };
 
   const byIndex = new Map<number, JournalEntry[]>();
@@ -50,7 +47,7 @@ function build(
         position: { x: 0, y: 0 },
         data: {
           label: (
-            <div style={{ textAlign: "left", position: "relative" }}>
+            <div style={{ textAlign: "left" }}>
               <div
                 style={{
                   fontWeight: 600,
@@ -59,7 +56,6 @@ function build(
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
                   fontFamily: "ui-monospace, 'Cascadia Mono', monospace",
-                  paddingRight: onReplay ? 22 : 0,
                 }}
               >
                 {truncate(entry.call.name)}
@@ -67,39 +63,9 @@ function build(
               <div style={{ fontSize: 10, color, marginTop: 2 }}>
                 r{entry.revision} · {entry.outcome.status}
                 {entry.outcome.message
-                  ? ` — ${truncate(entry.outcome.message, 24)}`
+                  ? ` — ${truncate(entry.outcome.message, 26)}`
                   : ""}
               </div>
-              {onReplay && (
-                <button
-                  title="Replay from this step"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onReplay(entry.index);
-                  }}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    right: 0,
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    fontSize: 13,
-                    lineHeight: 1,
-                    padding: "1px 2px",
-                    color: "#6a1b9a",
-                    opacity: 0.7,
-                  }}
-                  onMouseEnter={(e) =>
-                    ((e.target as HTMLButtonElement).style.opacity = "1")
-                  }
-                  onMouseLeave={(e) =>
-                    ((e.target as HTMLButtonElement).style.opacity = "0.7")
-                  }
-                >
-                  ↺
-                </button>
-              )}
             </div>
           ),
         },
@@ -147,17 +113,8 @@ function build(
   return { nodes: layout(nodes, edges, "LR", NODE_W, NODE_H), edges };
 }
 
-export function CallGraph({
-  entries,
-  onReplay,
-}: {
-  entries: JournalEntry[];
-  onReplay?: (entryIndex: number) => void;
-}) {
-  const { nodes, edges } = useMemo(
-    () => build(entries, onReplay),
-    [entries, onReplay],
-  );
+export function CallGraph({ entries }: { entries: JournalEntry[] }) {
+  const { nodes, edges } = useMemo(() => build(entries), [entries]);
 
   if (!entries || entries.length === 0 || nodes.length === 0) {
     return (
