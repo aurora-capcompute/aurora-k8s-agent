@@ -161,13 +161,14 @@ func runAgent() error {
 			if err != nil {
 				return err
 			}
-			item := observation{Action: requested.Action, Status: response.Status}
 			if response.Status == "failed" {
-				item.Error = response.Message
-			} else {
-				item.Content = response.Result
+				return fmt.Errorf("tool %q failed: %s", requested.Action, response.Message)
 			}
-			results = append(results, item)
+			results = append(results, observation{
+				Action:  requested.Action,
+				Status:  response.Status,
+				Content: response.Result,
+			})
 		}
 		raw, _ := json.Marshal(results)
 		messages = append(messages, message{Role: "user", Content: string(raw)})
