@@ -7,7 +7,7 @@ import ReactFlow, {
   type Node,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import type { RevisionView } from "../types";
+import type { JournalEntry } from "../types";
 import { layout, statusColor } from "./graph";
 
 const NODE_W = 220;
@@ -17,23 +17,34 @@ function truncate(s: string, max = 28): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
-function nid(revision: number, index: number): string {
-  return `r${revision}e${index}`;
+// Node ID: unique per (index, revision) pair.
+function nid(index: number, revision: number): string {
+  return `p${index}r${revision}`;
 }
 
-function build(revisions: RevisionView[]): { nodes: Node[]; edges: Edge[] } {
+// build derives the branching call-graph from a flat list of JournalEntries.
+// Each entry has (index, revision); entries with the same index but different
+// revisions represent retries at that step — they appear as fork edges.
+function build(entries: JournalEntry[]): { nodes: Node[]; edges: Edge[] } {
+  if (!entries || entries.length === 0) return { nodes: [], edges: [] };
+
+  // Group by index.
+  const byIndex = new Map<number, JournalEntry[]>();
+  for (const e of entries) {
+    const group = byIndex.get(e.index) ?? [];
+    group.push(e);
+    byIndex.set(e.index, group);
+  }
+
+  const indices = [...byIndex.keys()].sort((a, b) => a - b);
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  for (const rev of revisions) {
-    const entries = rev.entries ?? [];
-    // Shared prefix indices [0, fork_offset) already appear in the parent
-    // revision's nodes; only render new entries for this revision.
-    const newFrom = rev.forked ? rev.fork_offset : 0;
+  for (const idx of indices) {
+    const group = (byIndex.get(idx) ?? []).sort((a, b) => a.revision - b.revision);
 
-    for (let i = newFrom; i < entries.length; i++) {
-      const entry = entries[i];
-      const id = nid(rev.revision, entry.index);
+    for (const entry of group) {
+      const id = nid(idx, entry.revision);
       const color = statusColor(entry.outcome.status);
 
       nodes.push({
@@ -55,9 +66,9 @@ function build(revisions: RevisionView[]): { nodes: Node[]; edges: Edge[] } {
                 {truncate(entry.call.name)}
               </div>
               <div style={{ fontSize: 10, color, marginTop: 2 }}>
-                r{rev.revision} · {entry.outcome.status}
+                r{entry.revision} · {entry.outcome.status}
                 {entry.outcome.message
-                  ? ` — ${truncate(entry.outcome.message, 28)}`
+                  ? ` — ${truncate(entry.outcome.message, 26)}`
                   : ""}
               </div>
             </div>
@@ -73,31 +84,34 @@ function build(revisions: RevisionView[]): { nodes: Node[]; edges: Edge[] } {
         },
       });
 
-      if (i === newFrom) {
-        // First new entry: connect from last shared node (fork edge) or nothing.
-        if (rev.forked && newFrom > 0) {
-          const src = nid(rev.fork_parent!, newFrom - 1);
-          edges.push({
-            id: `fork:${src}->${id}`,
-            source: src,
-            target: id,
-            markerEnd: { type: MarkerType.ArrowClosed },
-            style: { strokeWidth: 1.5, strokeDasharray: "5 3", stroke: "#6a1b9a" },
-            label: `retry r${rev.revision}`,
-            labelStyle: { fontSize: 10, fill: "#6a1b9a" },
-            labelBgStyle: { fill: "#fafafa" },
-          });
+      // Connect from the predecessor at (idx-1) with the highest revision ≤ entry.revision.
+      if (idx > 0) {
+        const prevGroup = byIndex.get(idx - 1);
+        if (prevGroup) {
+          const pred = [...prevGroup]
+            .filter((e) => e.revision <= entry.revision)
+            .sort((a, b) => b.revision - a.revision)[0];
+          if (pred) {
+            const src = nid(idx - 1, pred.revision);
+            const isFork = pred.revision < entry.revision;
+            edges.push({
+              id: `${src}->${id}`,
+              source: src,
+              target: id,
+              markerEnd: { type: MarkerType.ArrowClosed },
+              style: isFork
+                ? { strokeWidth: 1.5, strokeDasharray: "5 3", stroke: "#6a1b9a" }
+                : { strokeWidth: 1.5 },
+              ...(isFork
+                ? {
+                    label: `retry r${entry.revision}`,
+                    labelStyle: { fontSize: 10, fill: "#6a1b9a" },
+                    labelBgStyle: { fill: "#fafafa" },
+                  }
+                : {}),
+            });
+          }
         }
-      } else {
-        // Sequential edge within this revision.
-        const prevId = nid(rev.revision, entries[i - 1].index);
-        edges.push({
-          id: `seq:${prevId}->${id}`,
-          source: prevId,
-          target: id,
-          markerEnd: { type: MarkerType.ArrowClosed },
-          style: { strokeWidth: 1.5 },
-        });
       }
     }
   }
@@ -105,10 +119,10 @@ function build(revisions: RevisionView[]): { nodes: Node[]; edges: Edge[] } {
   return { nodes: layout(nodes, edges, "LR", NODE_W, NODE_H), edges };
 }
 
-export function CallGraph({ revisions }: { revisions: RevisionView[] }) {
-  const { nodes, edges } = useMemo(() => build(revisions), [revisions]);
+export function CallGraph({ entries }: { entries: JournalEntry[] }) {
+  const { nodes, edges } = useMemo(() => build(entries), [entries]);
 
-  if (!revisions || revisions.length === 0 || nodes.length === 0) {
+  if (!entries || entries.length === 0 || nodes.length === 0) {
     return (
       <div className="empty" style={{ margin: "auto", paddingTop: 32 }}>
         No tool calls recorded yet.

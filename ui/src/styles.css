@@ -262,6 +262,14 @@ button {
   cursor: pointer;
 }
 
+.rev-tag {
+  display: inline-block;
+  font-size: 10px;
+  color: #6a1b9a;
+  margin-left: 6px;
+  font-family: ui-monospace, 'Cascadia Mono', monospace;
+}
+
 .journal .outcome-failed > details > summary code {
   color: #c62828;
 }

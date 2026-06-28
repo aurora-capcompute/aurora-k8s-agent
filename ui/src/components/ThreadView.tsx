@@ -103,10 +103,10 @@ export function ThreadView({
     return runs[runs.length - 1]?.run_id ?? null;
   }, [selectedRun, graph]);
 
-  const focusRevisions = useMemo(() => {
+  const focusEntries = useMemo(() => {
     if (!graph || !focusRun) return null;
     const run = (graph.runs ?? []).find((r) => r.run_id === focusRun);
-    return run?.revisions ?? null;
+    return run?.entries ?? null;
   }, [graph, focusRun]);
 
   const send = async () => {
@@ -200,7 +200,7 @@ export function ThreadView({
           <div className="graph-wrap">
             <div className="graph-split">
               <div className="graph-canvas">
-                <CallGraph revisions={focusRevisions ?? []} />
+                <CallGraph entries={focusEntries ?? []} />
               </div>
               {focusRun && (
                 <div className="graph-side">
@@ -228,49 +228,37 @@ export function ThreadView({
                 </button>{" "}
                 <StatusBadge status={run.status} /> — {run.message}
               </div>
-              {run.revisions.map((rev) => (
-                <details key={rev.revision} className="rev">
-                  <summary>
-                    revision {rev.revision}
-                    {rev.forked
-                      ? ` · forked from ${rev.fork_parent} @ ${rev.fork_offset}`
-                      : " · base"}{" "}
-                    · {rev.entries.length} steps
-                  </summary>
-                  <ol className="journal">
-                    {rev.entries.map((entry) => (
-                      <li
-                        key={entry.index}
-                        className={`outcome-${entry.outcome.status}`}
-                      >
-                        <details>
-                          <summary>
-                            <span
-                              className={`badge badge-${entry.outcome.status}`}
-                            >
-                              {entry.outcome.status}
-                            </span>
-                            <code>{entry.call.name}</code>
-                            {entry.outcome.message
-                              ? ` — ${entry.outcome.message}`
-                              : ""}
-                          </summary>
-                          {entry.call.args !== undefined && (
-                            <pre className="json">
-                              {JSON.stringify(entry.call.args, null, 2)}
-                            </pre>
-                          )}
-                          {entry.outcome.result !== undefined && (
-                            <pre className="json result">
-                              {JSON.stringify(entry.outcome.result, null, 2)}
-                            </pre>
-                          )}
-                        </details>
-                      </li>
-                    ))}
-                  </ol>
-                </details>
-              ))}
+              <ol className="journal">
+                {(run.entries ?? []).map((entry) => (
+                  <li
+                    key={`${entry.index}-${entry.revision}`}
+                    className={`outcome-${entry.outcome.status}`}
+                  >
+                    <details>
+                      <summary>
+                        <span className={`badge badge-${entry.outcome.status}`}>
+                          {entry.outcome.status}
+                        </span>
+                        <code>{entry.call.name}</code>
+                        <span className="rev-tag">r{entry.revision}</span>
+                        {entry.outcome.message
+                          ? ` — ${entry.outcome.message}`
+                          : ""}
+                      </summary>
+                      {entry.call.args !== undefined && (
+                        <pre className="json">
+                          {JSON.stringify(entry.call.args, null, 2)}
+                        </pre>
+                      )}
+                      {entry.outcome.result !== undefined && (
+                        <pre className="json result">
+                          {JSON.stringify(entry.outcome.result, null, 2)}
+                        </pre>
+                      )}
+                    </details>
+                  </li>
+                ))}
+              </ol>
             </div>
           ))}
         </div>

@@ -52,16 +52,9 @@ export interface JournalCall {
 
 export interface JournalEntry {
   index: number;
+  revision: number;
   call: JournalCall;
   outcome: JournalOutcome;
-}
-
-export interface RevisionView {
-  revision: number;
-  forked: boolean;
-  fork_parent?: number;
-  fork_offset: number;
-  entries: JournalEntry[];
 }
 
 export interface ThreadGraphRun {
@@ -74,7 +67,7 @@ export interface ThreadGraphRun {
   attempt: number;
   current_revision: number;
   child_run_ids?: string[];
-  revisions: RevisionView[];
+  entries: JournalEntry[];
 }
 
 export interface ThreadGraph {
