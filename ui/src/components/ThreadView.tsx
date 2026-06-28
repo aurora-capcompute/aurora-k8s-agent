@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, subscribe, UnauthorizedError } from "../api";
 import type { RunStatus, ThreadGraph } from "../types";
+import { DebugDrawer } from "./DebugDrawer";
 
 const TERMINAL: ReadonlySet<RunStatus> = new Set([
   "completed",
@@ -8,10 +9,6 @@ const TERMINAL: ReadonlySet<RunStatus> = new Set([
   "failed",
   "interrupted",
 ]);
-import { CallGraph } from "./CallGraph";
-import { RunPanel } from "./RunPanel";
-
-type Tab = "chat" | "graph" | "revisions";
 
 function StatusBadge({ status }: { status: RunStatus }) {
   return <span className={`badge badge-${status}`}>{status}</span>;
@@ -19,14 +16,24 @@ function StatusBadge({ status }: { status: RunStatus }) {
 
 export function ThreadView({
   threadID,
+  drawerOpen,
+  drawerRunID,
+  onToggleDrawer,
+  onRunClick,
+  onDrawerClose,
   onUnauthorized,
+  onReloadThreads,
 }: {
   threadID: string;
+  drawerOpen: boolean;
+  drawerRunID: string | null;
+  onToggleDrawer: () => void;
+  onRunClick: (runID: string) => void;
+  onDrawerClose: () => void;
   onUnauthorized?: () => void;
+  onReloadThreads?: () => void;
 }) {
   const [graph, setGraph] = useState<ThreadGraph | null>(null);
-  const [selectedRun, setSelectedRun] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("chat");
   const [tick, setTick] = useState(0);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -36,11 +43,8 @@ export function ThreadView({
 
   const handleError = useCallback(
     (e: unknown) => {
-      if (e instanceof UnauthorizedError) {
-        onUnauthorized?.();
-      } else {
-        setError(String(e));
-      }
+      if (e instanceof UnauthorizedError) onUnauthorized?.();
+      else setError(String(e));
     },
     [onUnauthorized],
   );
@@ -64,10 +68,11 @@ export function ThreadView({
     });
   }, []);
 
-  // Clear progress lines for runs that have reached a terminal state.
+  // Clear progress lines for completed runs.
   useEffect(() => {
-    const runs = graph?.runs ?? [];
-    const done = runs.filter((r) => TERMINAL.has(r.status)).map((r) => r.run_id);
+    const done = (graph?.runs ?? [])
+      .filter((r) => TERMINAL.has(r.status))
+      .map((r) => r.run_id);
     if (done.length === 0) return;
     setProgress((prev) => {
       if (!done.some((id) => prev.has(id))) return prev;
@@ -79,7 +84,6 @@ export function ThreadView({
 
   useEffect(() => {
     setGraph(null);
-    setSelectedRun(null);
     setProgress(new Map());
     void reload();
     const unsubscribe = subscribe(
@@ -87,27 +91,16 @@ export function ThreadView({
       () => {
         setTick((t) => t + 1);
         void reload();
+        onReloadThreads?.();
       },
       onProgress,
     );
     return unsubscribe;
-  }, [threadID, reload, onProgress]);
+  }, [threadID, reload, onProgress, onReloadThreads]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [graph]);
-
-  const focusRun = useMemo(() => {
-    if (selectedRun) return selectedRun;
-    const runs = graph?.runs ?? [];
-    return runs[runs.length - 1]?.run_id ?? null;
-  }, [selectedRun, graph]);
-
-  const focusEntries = useMemo(() => {
-    if (!graph || !focusRun) return null;
-    const run = (graph.runs ?? []).find((r) => r.run_id === focusRun);
-    return run?.entries ?? null;
-  }, [graph, focusRun]);
 
   const send = async () => {
     const message = input.trim();
@@ -124,37 +117,42 @@ export function ThreadView({
     }
   };
 
-  const inspect = (runID: string) => {
-    setSelectedRun(runID);
-    setTab("graph");
-  };
+  const title =
+    graph?.title && graph.title !== "New thread"
+      ? graph.title
+      : threadID.slice(0, 20);
+
+  // Default the drawer to the most recent run when none is explicitly selected.
+  const runs = graph?.runs ?? [];
+  const activeDrawerRunID =
+    drawerRunID ?? (runs.length > 0 ? runs[runs.length - 1].run_id : null);
 
   return (
-    <div className="thread">
-      <div className="tabs">
-        {(["chat", "graph", "revisions"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            className={tab === t ? "tab active" : "tab"}
-            onClick={() => setTab(t)}
-          >
-            {t}
-          </button>
-        ))}
-        <span className="thread-id">{threadID}</span>
+    <div className="thread-shell">
+      <div className="thread-header">
+        <span className="thread-header-title">{title}</span>
+        <button
+          className={`debug-toggle${drawerOpen ? " active" : ""}`}
+          onClick={onToggleDrawer}
+        >
+          Debug
+        </button>
       </div>
 
-      {error && <div className="error">{error}</div>}
-
-      {tab === "chat" && (
-        <>
-          <div className="transcript">
+      <div className="thread-body">
+        <div className="transcript">
+          <div className="transcript-inner">
+            {error && <div className="error">{error}</div>}
+            {(graph?.runs ?? []).length === 0 && (
+              <div className="transcript-empty">Send a message to start.</div>
+            )}
             {(graph?.runs ?? []).map((run) => (
               <div key={run.run_id} className="exchange">
                 <div className="msg user">{run.message}</div>
+
                 {!TERMINAL.has(run.status) &&
                   (progress.get(run.run_id)?.length ?? 0) > 0 && (
-                    <div className="msg progress-msg">
+                    <div className="progress-block">
                       <div className="progress-header">Working…</div>
                       {(progress.get(run.run_id) ?? []).map((line, i) => (
                         <div key={i} className="progress-line">
@@ -163,19 +161,31 @@ export function ThreadView({
                       ))}
                     </div>
                   )}
-                {run.answer && <div className="msg assistant">{run.answer}</div>}
-                {run.error && <div className="msg error-msg">⚠ {run.error}</div>}
+
+                {run.answer && (
+                  <div className="msg assistant">{run.answer}</div>
+                )}
+                {run.error && (
+                  <div className="msg error-msg">⚠ {run.error}</div>
+                )}
+
                 <div className="run-meta">
-                  <button className="link" onClick={() => inspect(run.run_id)}>
-                    {run.run_id}
-                  </button>{" "}
-                  <StatusBadge status={run.status} /> · rev{" "}
-                  {run.current_revision}
+                  <button
+                    className="link"
+                    onClick={() => onRunClick(run.run_id)}
+                  >
+                    {run.run_id.slice(0, 16)}
+                  </button>
+                  <StatusBadge status={run.status} />
+                  <span className="rev-tag">r{run.current_revision}</span>
                 </div>
               </div>
             ))}
             <div ref={bottomRef} />
           </div>
+        </div>
+
+        <div className="composer-wrap">
           <div className="composer">
             <textarea
               value={input}
@@ -192,77 +202,17 @@ export function ThreadView({
               {busy ? "…" : "Send"}
             </button>
           </div>
-        </>
-      )}
-
-      {tab === "graph" &&
-        (graph && (graph.runs?.length ?? 0) > 0 ? (
-          <div className="graph-wrap">
-            <div className="graph-split">
-              <div className="graph-canvas">
-                <CallGraph entries={focusEntries ?? []} />
-              </div>
-              {focusRun && (
-                <div className="graph-side">
-                  <RunPanel
-                    runID={focusRun}
-                    tick={tick}
-                    onChanged={() => void reload()}
-                    onUnauthorized={onUnauthorized}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="empty">No runs yet.</div>
-        ))}
-
-      {tab === "revisions" && (
-        <div className="revisions">
-          {(graph?.runs ?? []).map((run) => (
-            <div key={run.run_id} className="rev-run">
-              <div className="rev-run-head">
-                <button className="link" onClick={() => inspect(run.run_id)}>
-                  {run.run_id}
-                </button>{" "}
-                <StatusBadge status={run.status} /> — {run.message}
-              </div>
-              <ol className="journal">
-                {(run.entries ?? []).map((entry) => (
-                  <li
-                    key={`${entry.index}-${entry.revision}`}
-                    className={`outcome-${entry.outcome.status}`}
-                  >
-                    <details>
-                      <summary>
-                        <span className={`badge badge-${entry.outcome.status}`}>
-                          {entry.outcome.status}
-                        </span>
-                        <code>{entry.call.name}</code>
-                        <span className="rev-tag">r{entry.revision}</span>
-                        {entry.outcome.message
-                          ? ` — ${entry.outcome.message}`
-                          : ""}
-                      </summary>
-                      {entry.call.args !== undefined && (
-                        <pre className="json">
-                          {JSON.stringify(entry.call.args, null, 2)}
-                        </pre>
-                      )}
-                      {entry.outcome.result !== undefined && (
-                        <pre className="json result">
-                          {JSON.stringify(entry.outcome.result, null, 2)}
-                        </pre>
-                      )}
-                    </details>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ))}
         </div>
-      )}
+      </div>
+
+      <DebugDrawer
+        runID={activeDrawerRunID}
+        open={drawerOpen}
+        tick={tick}
+        onClose={onDrawerClose}
+        onChanged={() => void reload()}
+        onUnauthorized={onUnauthorized}
+      />
     </div>
   );
 }

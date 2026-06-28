@@ -14,6 +14,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   // Bumped after a successful login to re-trigger manifest loading.
   const [loginKey, setLoginKey] = useState(0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerRunID, setDrawerRunID] = useState<string | null>(null);
 
   const onUnauthorized = useCallback(() => setNeedsLogin(true), []);
 
@@ -130,7 +132,21 @@ export default function App() {
       <main className="pane main">
         {error && <div className="error">{error}</div>}
         {thread ? (
-          <ThreadView threadID={thread} onUnauthorized={onUnauthorized} />
+          <ThreadView
+            threadID={thread}
+            drawerOpen={drawerOpen}
+            drawerRunID={drawerRunID}
+            onToggleDrawer={() => setDrawerOpen((o) => !o)}
+            onRunClick={(runID) => {
+              setDrawerRunID(runID);
+              setDrawerOpen(true);
+            }}
+            onDrawerClose={() => setDrawerOpen(false)}
+            onUnauthorized={onUnauthorized}
+            onReloadThreads={() => {
+              if (manifest) loadThreads(manifest);
+            }}
+          />
         ) : (
           <div className="empty center">Select or create a thread.</div>
         )}
