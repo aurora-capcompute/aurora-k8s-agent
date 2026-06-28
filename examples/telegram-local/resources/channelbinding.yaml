@@ -1,53 +1,81 @@
-# The binding satisfies the brain's interface with one flat grant and wires the
-# brain to the channel. `allowed` is the ceiling: every required brain capability
-# (openai.chat) must appear, and the operational tools are scoped here.
-#
-# The LLM key can be supplied two ways:
-#   A) Set it in spec.secrets (encrypted in this CRD, injected as an env var at
-#      bridge startup). Seal: printf %s "$KEY" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
-#   B) Set OPENAI_API_KEY in the environment directly (e.g. via .env or Docker).
-# The local example uses option B — no spec.secrets block is needed.
+# The binding declares the capability tree and wires the brain to the channel.
+# Capability settings use the SettingValue ADT: { type, value/ciphertext }.
+# Set your LLM key as a literal value, or use type: inPlaceEncrypted with a
+# sealed ciphertext:  printf %s "$KEY" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
 apiVersion: aurora.dev/v1alpha1
 kind: ChannelBinding
 metadata:
   name: ops-on-telegram
 spec:
   brainRef: kubernetes-agent
-  channelRef:
-    kind: TelegramChannel
-    name: ops
-  systemPrompt: >-
-    You are Aurora, a Kubernetes operator. Inspect current state before making
-    changes, summarize intended mutations, and never read Secrets.
-  allowed:
+  channels:
+    - kind: TelegramChannel
+      name: ops
+  systemPrompt:
+    type: literal
+    value: >-
+      You are Aurora, a Kubernetes operator. Inspect current state before making
+      changes, summarize intended mutations, and never read Secrets.
+  capabilities:
     - name: openai.chat
       settings:
-        base_url: https://api.openai.com/v1
-        api_key_env: OPENAI_API_KEY
-        default_model: gpt-5.5
-        allowed_models: [gpt-5.5]
-        require_approval: false
+        base_url:
+          type: literal
+          value: "https://api.openai.com/v1"
+        api_key:
+          type: literal
+          value: "your-api-key"    # or: type: inPlaceEncrypted / ciphertext: <sealed>
+        default_model:
+          type: literal
+          value: "gpt-4.1"
+        allowed_models:
+          type: literal
+          value: ["gpt-4.1"]
+        require_approval:
+          type: literal
+          value: false
     - name: k8s.get
-      settings: {namespaces: [default]}
+      settings:
+        namespaces: {type: literal, value: [default]}
     - name: k8s.list
-      settings: {namespaces: [default]}
+      settings:
+        namespaces: {type: literal, value: [default]}
     - name: k8s.logs
-      settings: {namespaces: [default]}
+      settings:
+        namespaces: {type: literal, value: [default]}
     - name: k8s.events
-      settings: {namespaces: [default]}
+      settings:
+        namespaces: {type: literal, value: [default]}
     - name: k8s.apply
-      settings: {namespaces: [default], require_approval: true}
+      optional: true
+      settings:
+        namespaces: {type: literal, value: [default]}
+        require_approval: {type: literal, value: true}
     - name: k8s.delete
-      settings: {namespaces: [default], require_approval: true}
+      optional: true
+      settings:
+        namespaces: {type: literal, value: [default]}
+        require_approval: {type: literal, value: true}
     - name: helm.list
-      settings: {namespaces: [default]}
+      settings:
+        namespaces: {type: literal, value: [default]}
     - name: helm.status
-      settings: {namespaces: [default]}
+      settings:
+        namespaces: {type: literal, value: [default]}
     - name: helm.get_values
-      settings: {namespaces: [default]}
+      settings:
+        namespaces: {type: literal, value: [default]}
     - name: helm.upgrade
-      settings: {namespaces: [default], require_approval: true}
+      optional: true
+      settings:
+        namespaces: {type: literal, value: [default]}
+        require_approval: {type: literal, value: true}
     - name: helm.uninstall
-      settings: {namespaces: [default], require_approval: true}
+      optional: true
+      settings:
+        namespaces: {type: literal, value: [default]}
+        require_approval: {type: literal, value: true}
     - name: timer.set
-      settings: {max_duration_ms: 86400000}
+      optional: true
+      settings:
+        max_duration_ms: {type: literal, value: 86400000}

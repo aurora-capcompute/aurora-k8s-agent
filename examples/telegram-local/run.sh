@@ -45,8 +45,7 @@ export AURORA_SECRET_KEY AURORA_TASK_SECRET AURORA_STATE_KEY OPENAI_API_KEY
 go build -o bin/aurora-k8s-agent ./cmd/aurora-k8s-agent
 sh examples/brain/build.sh
 ./bin/aurora-k8s-agent pack-brain \
-  --wasm examples/brain/dist/kubernetes-agent.wasm \
-  --manifest examples/brain/manifest.json \
+  --brain kubernetes-agent:examples/brain/dist/kubernetes-agent.wasm \
   --out examples/brain/dist/layout
 layout="$(pwd)/examples/brain/dist/layout"
 

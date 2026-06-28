@@ -200,6 +200,7 @@ func (s *Service) ensureConversation(ctx context.Context, user policy.User, chat
 		return conversation, nil
 	}
 	if found {
+		// Policy changed: stop active run before rotating to a fresh thread.
 		if thread, getErr := s.runtime.GetThread(conversation.ThreadID); getErr == nil && thread.ActiveRunID != "" {
 			_, _ = s.runtime.Stop(thread.ActiveRunID)
 		}

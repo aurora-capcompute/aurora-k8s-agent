@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -48,12 +49,11 @@ func pullLayout(ctx context.Context, reference string) (Artifact, error) {
 	return pull(ctx, store, tag)
 }
 
-// WriteLayout packs a brain (its declared manifest plus wasm) into an OCI image
-// layout directory at dir, tagged with tag (default "latest"). The result is a
-// registry-less artifact that pullLayout — and therefore the brain provider and
-// control plane — can consume via an "oci-layout:" reference. configJSON must be
-// a valid brainspec manifest; it is stored verbatim as the artifact config.
-func WriteLayout(ctx context.Context, dir, tag string, configJSON, wasm []byte) (string, error) {
+// WriteLayout packs a multi-brain bundle into an OCI image layout at dir, tagged
+// with tag (default "latest"). configJSON is the brainspec manifest stored as the
+// artifact config. brains maps each brain's short name to its WASM bytes; each
+// brain becomes one annotated layer. Brain names are sorted for determinism.
+func WriteLayout(ctx context.Context, dir, tag string, configJSON []byte, brains map[string][]byte) (string, error) {
 	if tag == "" {
 		tag = defaultLayoutTag
 	}
@@ -66,13 +66,27 @@ func WriteLayout(ctx context.Context, dir, tag string, configJSON, wasm []byte) 
 	if err := pushIfAbsent(ctx, store, cfgDesc, configJSON); err != nil {
 		return "", fmt.Errorf("push brain config: %w", err)
 	}
-	wasmDesc := content.NewDescriptorFromBytes(BrainWasmMediaType, wasm)
-	if err := pushIfAbsent(ctx, store, wasmDesc, wasm); err != nil {
-		return "", fmt.Errorf("push brain wasm: %w", err)
+
+	names := make([]string, 0, len(brains))
+	for name := range brains {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	layers := make([]ocispec.Descriptor, 0, len(names))
+	for _, name := range names {
+		wasm := brains[name]
+		blobDesc := content.NewDescriptorFromBytes(BrainWasmMediaType, wasm)
+		if err := pushIfAbsent(ctx, store, blobDesc, wasm); err != nil {
+			return "", fmt.Errorf("push brain wasm %q: %w", name, err)
+		}
+		layerDesc := blobDesc
+		layerDesc.Annotations = map[string]string{BrainNameAnnotation: name}
+		layers = append(layers, layerDesc)
 	}
 
 	manifestDesc, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, ArtifactType,
-		oras.PackManifestOptions{ConfigDescriptor: &cfgDesc, Layers: []ocispec.Descriptor{wasmDesc}})
+		oras.PackManifestOptions{ConfigDescriptor: &cfgDesc, Layers: layers})
 	if err != nil {
 		return "", fmt.Errorf("pack brain manifest: %w", err)
 	}

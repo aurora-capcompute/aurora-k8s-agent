@@ -3,43 +3,53 @@ package brainspec
 import "testing"
 
 func TestParseValid(t *testing.T) {
-	raw := []byte(`{
-		"id": "kubernetes-agent",
-		"capabilities": [
-			{"name": "k8s.get"},
-			{"name": "k8s.apply", "optional": true},
-			{"name": "openai.chat", "settings": {"default_model": "gpt-5.5"}}
-		]
-	}`)
+	// Multi-brain manifest.
+	raw := []byte(`{"abi":1,"main":"kubernetes-agent","brains":["kubernetes-agent","k8s-scout"]}`)
 	m, err := Parse(raw)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if m.ID != "kubernetes-agent" {
-		t.Fatalf("id = %q", m.ID)
+	if m.Main != "kubernetes-agent" {
+		t.Fatalf("main = %q", m.Main)
 	}
-	if got := m.Required(); len(got) != 2 || got[0] != "k8s.get" || got[1] != "openai.chat" {
-		t.Fatalf("required = %v", got)
+	if len(m.Brains) != 2 {
+		t.Fatalf("brains = %v", m.Brains)
 	}
-	if c, ok := m.Declared("k8s.apply"); !ok || !c.Optional {
-		t.Fatalf("k8s.apply should be declared optional, got %+v ok=%v", c, ok)
+	if err := m.CheckABI(); err != nil {
+		t.Fatalf("CheckABI: %v", err)
 	}
-	if _, ok := m.Declared("helm.upgrade"); ok {
-		t.Fatal("helm.upgrade should not be declared")
+}
+
+func TestParseDefaultsBrains(t *testing.T) {
+	// When 'brains' is omitted, it defaults to [main].
+	raw := []byte(`{"abi":1,"main":"kubernetes-agent"}`)
+	m, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(m.Brains) != 1 || m.Brains[0] != "kubernetes-agent" {
+		t.Fatalf("brains = %v, want [kubernetes-agent]", m.Brains)
 	}
 }
 
 func TestParseRejects(t *testing.T) {
 	cases := map[string]string{
-		"missing id":     `{"capabilities": [{"name": "k8s.get"}]}`,
-		"empty cap name": `{"id": "x", "capabilities": [{"name": "  "}]}`,
-		"duplicate cap":  `{"id": "x", "capabilities": [{"name": "k8s.get"}, {"name": "k8s.get"}]}`,
-		"unknown field":  `{"id": "x", "brain": "y", "capabilities": []}`,
-		"malformed json": `{"id": "x"`,
+		"missing main":       `{"abi":1,"brains":["x"]}`,
+		"main not in brains": `{"abi":1,"main":"a","brains":["b"]}`,
+		"empty brain name":   `{"abi":1,"main":"a","brains":["a",""]}`,
+		"unknown field":      `{"abi":1,"main":"x","extra":"y"}`,
+		"malformed json":     `{"main":"x"`,
 	}
 	for name, raw := range cases {
 		if _, err := Parse([]byte(raw)); err == nil {
 			t.Errorf("%s: expected error", name)
 		}
+	}
+}
+
+func TestCheckABIRejectsIncompatible(t *testing.T) {
+	m := Manifest{ABI: 2, Main: "x", Brains: []string{"x"}}
+	if err := m.CheckABI(); err == nil {
+		t.Fatal("expected ErrIncompatibleABI for ABI=2")
 	}
 }

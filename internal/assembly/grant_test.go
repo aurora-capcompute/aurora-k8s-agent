@@ -9,12 +9,12 @@ import (
 	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 	"github.com/aurora-capcompute/capcompute/dispatcher"
 
-	"github.com/aurora-capcompute/aurora-k8s-agent/internal/brainspec"
-	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
 )
 
-// nsProvider implements aurora.DispatcherProvider with a namespace-subset rule,
-// mirroring the real k8s IsSubset: an empty parent namespace list allows anything.
+// nsProvider implements aurora.DispatcherProvider with a Normalize that passes
+// settings through, validating nothing (so BuildManifest tests can focus on
+// the assembly logic).
 type nsProvider struct{}
 
 func (nsProvider) Normalize(_ string, s json.RawMessage) (json.RawMessage, error) {
@@ -50,67 +50,95 @@ func (nsProvider) IsSubset(_ string, parent, child json.RawMessage) error {
 	return nil
 }
 
-func caps(names ...string) []aurora.CapabilityConfig {
-	out := make([]aurora.CapabilityConfig, len(names))
-	for i, n := range names {
-		out[i] = aurora.CapabilityConfig{Name: n}
-	}
-	return out
-}
+// rejectProvider returns an error for every Normalize call.
+type rejectProvider struct{}
 
-func TestValidateGrant(t *testing.T) {
-	decl := brainspec.Manifest{ID: "ops", Capabilities: []brainspec.Capability{
+func (rejectProvider) Normalize(name string, _ json.RawMessage) (json.RawMessage, error) {
+	return nil, fmt.Errorf("capability %q: not available", name)
+}
+func (rejectProvider) NewDispatcher(context.Context, aurora.RunContext, aurora.Manifest) (dispatcher.Dispatcher[aurora.RunContext], error) {
+	return nil, nil
+}
+func (rejectProvider) IsSubset(_ string, _, _ json.RawMessage) error { return nil }
+
+func TestBuildManifest(t *testing.T) {
+	caps := []v1alpha1.Capability{
 		{Name: "k8s.get"},
 		{Name: "k8s.apply", Optional: true},
-		{Name: "k8s.list", Settings: json.RawMessage(`{"namespaces":["default","kube-system"]}`)},
-	}}
-
-	// Required present, optional omitted, scoped subset allowed.
-	granted := []aurora.CapabilityConfig{
-		{Name: "k8s.get"},
-		{Name: "k8s.list", Settings: json.RawMessage(`{"namespaces":["default"]}`)},
-	}
-	if err := ValidateGrant(decl, granted, nsProvider{}); err != nil {
-		t.Fatalf("valid grant rejected: %v", err)
+		{Name: "openai.chat", Settings: map[string]v1alpha1.SettingValue{
+			"base_url": {Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`"https://api.openai.com/v1"`)},
+		}},
 	}
 
-	// Undeclared capability.
-	if err := ValidateGrant(decl, caps("k8s.get", "helm.upgrade"), nsProvider{}); err == nil {
-		t.Fatal("undeclared capability should be rejected")
+	m, err := BuildManifest("sha256:abc/ops", "You are helpful.", "my-binding", "sha256:abc", caps, nil, nsProvider{})
+	if err != nil {
+		t.Fatalf("BuildManifest: %v", err)
 	}
-	// Missing required capability (only the optional one granted).
-	if err := ValidateGrant(decl, caps("k8s.apply", "k8s.list"), nsProvider{}); err == nil {
-		t.Fatal("missing required capability should be rejected")
+	if m.Brain != "sha256:abc/ops" {
+		t.Fatalf("Brain = %q", m.Brain)
 	}
-	// Settings exceed the declared namespace scope.
-	wide := []aurora.CapabilityConfig{
-		{Name: "k8s.get"},
-		{Name: "k8s.list", Settings: json.RawMessage(`{"namespaces":["secret-ns"]}`)},
+	if m.BindingRef != "my-binding" {
+		t.Fatalf("BindingRef = %q", m.BindingRef)
 	}
-	if err := ValidateGrant(decl, wide, nsProvider{}); err == nil {
-		t.Fatal("settings exceeding declaration should be rejected")
+	if m.SystemPrompt != "You are helpful." {
+		t.Fatalf("SystemPrompt = %q", m.SystemPrompt)
+	}
+	if len(m.Capabilities) != 3 {
+		t.Fatalf("capabilities = %v", m.Capabilities)
 	}
 }
 
-func TestProviderValidateManifest(t *testing.T) {
-	decl := brainspec.Manifest{ID: "ops", Capabilities: []brainspec.Capability{{Name: "k8s.get"}}}
-	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ref": {Manifest: decl, Wasm: []byte("\x00asm"), Digest: "sha256:ops"},
-	}}
-	p, err := NewOCIBrainProvider(context.Background(), []string{"ref"}, "ops", puller)
+func TestBuildManifestOptionalSkipped(t *testing.T) {
+	// rejectProvider rejects all capabilities; optional ones should be skipped,
+	// required ones should cause an error.
+	caps := []v1alpha1.Capability{
+		{Name: "k8s.get", Optional: true},
+		{Name: "openai.chat"},
+	}
+
+	// k8s.get is optional so it's skipped; openai.chat is required so it fails.
+	_, err := BuildManifest("brain", "", "b", "digest", caps, nil, rejectProvider{})
+	if err == nil {
+		t.Fatal("required capability rejected by Normalize should fail BuildManifest")
+	}
+
+	// All optional → succeeds with empty capabilities.
+	optOnly := []v1alpha1.Capability{{Name: "k8s.get", Optional: true}}
+	m, err := BuildManifest("brain", "", "b", "digest", optOnly, nil, rejectProvider{})
 	if err != nil {
-		t.Fatalf("new: %v", err)
+		t.Fatalf("all-optional: %v", err)
 	}
-	ok := aurora.Manifest{Version: aurora.ManifestVersion, Brain: "ops", Capabilities: caps("k8s.get")}
-	if err := p.ValidateManifest(ok, nsProvider{}); err != nil {
-		t.Fatalf("valid manifest rejected: %v", err)
+	if len(m.Capabilities) != 0 {
+		t.Fatalf("expected empty capabilities, got %v", m.Capabilities)
 	}
-	bad := aurora.Manifest{Version: aurora.ManifestVersion, Brain: "ops", Capabilities: caps("k8s.delete")}
-	if err := p.ValidateManifest(bad, nsProvider{}); err == nil {
-		t.Fatal("undeclared capability should be rejected")
+}
+
+func TestBuildManifestChildren(t *testing.T) {
+	children := []v1alpha1.ChildSpec{{
+		Name:         "researcher",
+		Brain:        "ops",
+		SystemPrompt: "You are a researcher.",
+		Capabilities: []v1alpha1.Capability{{Name: "llm.chat"}},
+	}}
+	m, err := BuildManifest("sha256:abc/ops", "", "b", "sha256:abc", nil, children, nsProvider{})
+	if err != nil {
+		t.Fatalf("BuildManifest: %v", err)
 	}
-	unknown := aurora.Manifest{Version: aurora.ManifestVersion, Brain: "ghost", Capabilities: caps("k8s.get")}
-	if err := p.ValidateManifest(unknown, nsProvider{}); err == nil {
-		t.Fatal("unknown brain should be rejected")
+	if len(m.Children) != 1 {
+		t.Fatalf("children = %v", m.Children)
+	}
+	ch := m.Children[0]
+	if ch.Name != "researcher" {
+		t.Fatalf("child name = %q", ch.Name)
+	}
+	// Brain is expanded to artifactDigest/brainName.
+	if ch.Brain != "sha256:abc/ops" {
+		t.Fatalf("child Brain = %q, want sha256:abc/ops", ch.Brain)
+	}
+	if ch.SystemPrompt != "You are a researcher." {
+		t.Fatalf("child SystemPrompt = %q", ch.SystemPrompt)
+	}
+	if ch.BindingRef != "b" {
+		t.Fatalf("child BindingRef = %q", ch.BindingRef)
 	}
 }

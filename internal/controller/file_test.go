@@ -39,8 +39,8 @@ spec:
 
 	// A JSON ChannelBinding in its own file.
 	bnd := `{"apiVersion":"aurora.dev/v1alpha1","kind":"ChannelBinding","metadata":{"name":"ops"},` +
-		`"spec":{"brainRef":"k8s-brain","channelRef":{"kind":"TelegramChannel","name":"tg"},` +
-		`"allowed":[{"name":"k8s.get"}]}}`
+		`"spec":{"brainRef":"k8s-brain","channels":[{"kind":"TelegramChannel","name":"tg"}],` +
+		`"capabilities":[{"name":"k8s.get"}]}}`
 	if err := os.WriteFile(filepath.Join(dir, "b.json"), []byte(bnd), 0o600); err != nil {
 		t.Fatalf("write binding: %v", err)
 	}
@@ -67,11 +67,11 @@ spec:
 		t.Fatalf("telegram channels = %+v", in.TelegramChannels)
 	}
 	if len(in.Bindings) != 1 || in.Bindings[0].Name != "ops" || in.Bindings[0].Spec.BrainRef != "k8s-brain" ||
-		in.Bindings[0].Spec.ChannelRef.Name != "tg" || in.Bindings[0].Spec.ChannelRef.Kind != "TelegramChannel" {
+		in.Bindings[0].Spec.Channels[0].Name != "tg" || in.Bindings[0].Spec.Channels[0].Kind != "TelegramChannel" {
 		t.Fatalf("bindings = %+v", in.Bindings)
 	}
-	if len(in.Bindings[0].Spec.Allowed) != 1 || in.Bindings[0].Spec.Allowed[0].Name != "k8s.get" {
-		t.Fatalf("binding allowed = %+v", in.Bindings[0].Spec.Allowed)
+	if len(in.Bindings[0].Spec.Capabilities) != 1 || in.Bindings[0].Spec.Capabilities[0].Name != "k8s.get" {
+		t.Fatalf("binding capabilities = %+v", in.Bindings[0].Spec.Capabilities)
 	}
 }
 

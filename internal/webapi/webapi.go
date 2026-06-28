@@ -71,7 +71,7 @@ func (h *handler) manifestThreads(w http.ResponseWriter, r *http.Request) {
 	}
 	threads := make([]aurora.ThreadSummary, 0)
 	for _, t := range h.runtime.ListThreads() {
-		if bound, ok := h.channel.NameForManifest(t.Manifest); ok && bound == name {
+		if t.Manifest.BindingRef == name {
 			threads = append(threads, t)
 		}
 	}

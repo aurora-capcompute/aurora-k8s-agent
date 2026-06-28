@@ -97,12 +97,8 @@ func run() error {
 	defer runtimeStore.Close()
 
 	sessionStore := memory.NewSessionStore[string, aurora.RunContext]()
-	brains, err := buildBrainProvider(ctx, cfg, logger)
-	if err != nil {
-		return err
-	}
 	runtime, err := aurora.NewRuntime(ctx, aurora.Config{
-		Brains:       brains,
+		Brains:       assembly.EmptyProvider{},
 		Dispatchers:  provider,
 		Log:          runtimeStore,
 		Leases:       runtimeStore,

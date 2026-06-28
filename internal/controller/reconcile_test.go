@@ -10,15 +10,10 @@ import (
 	"github.com/aurora-capcompute/capcompute/dispatcher"
 
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
-	"github.com/aurora-capcompute/aurora-k8s-agent/internal/brainspec"
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 )
 
-type testProvider struct {
-	// subsetErr, when set, makes IsSubset reject every grant (settings exceed
-	// the brain's declared bounds).
-	subsetErr error
-}
+type testProvider struct{}
 
 func (testProvider) Normalize(_ string, s json.RawMessage) (json.RawMessage, error) {
 	if len(s) == 0 {
@@ -31,7 +26,7 @@ func (testProvider) NewDispatcher(context.Context, aurora.RunContext, aurora.Man
 	return nil, nil
 }
 
-func (p testProvider) IsSubset(_ string, _, _ json.RawMessage) error { return p.subsetErr }
+func (testProvider) IsSubset(_ string, _, _ json.RawMessage) error { return nil }
 
 type fakePuller struct{ byRef map[string]oci.Artifact }
 
@@ -43,8 +38,14 @@ func (f fakePuller) Pull(_ context.Context, ref string) (oci.Artifact, error) {
 	return a, nil
 }
 
-func brainArtifact(id string, caps ...brainspec.Capability) oci.Artifact {
-	return oci.Artifact{Manifest: brainspec.Manifest{ID: id, Capabilities: caps}, Wasm: []byte("\x00asm"), Digest: "sha256:" + id}
+// brainArtifact creates a single-brain OCI artifact for tests. The brain ID
+// is the short name; the full runtime ID will be "sha256:<id>/<id>".
+func brainArtifact(id string) oci.Artifact {
+	return oci.Artifact{
+		Main:   id,
+		Brains: map[string][]byte{id: []byte("\x00asm")},
+		Digest: "sha256:" + id,
+	}
 }
 
 // telegram builds a ready TelegramChannel input.
@@ -55,23 +56,21 @@ func telegram(name string) NamedTelegramChannel {
 	}}
 }
 
-func bind(name, brainRef, chanKind, chanName string, allowed ...string) NamedBinding {
-	caps := make([]v1alpha1.Capability, len(allowed))
-	for i, a := range allowed {
-		caps[i] = v1alpha1.Capability{Name: a}
+func bind(name, brainRef, chanKind, chanName string, caps ...string) NamedBinding {
+	capabilities := make([]v1alpha1.Capability, len(caps))
+	for i, c := range caps {
+		capabilities[i] = v1alpha1.Capability{Name: c}
 	}
 	return NamedBinding{Name: name, Spec: v1alpha1.ChannelBindingSpec{
-		BrainRef:   brainRef,
-		ChannelRef: v1alpha1.ChannelRef{Kind: chanKind, Name: chanName},
-		Allowed:    caps,
+		BrainRef:     brainRef,
+		Channels:     []v1alpha1.ChannelRef{{Kind: chanKind, Name: chanName}},
+		Capabilities: capabilities,
 	}}
 }
 
 func TestReconcileHappyPath(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops",
-			brainspec.Capability{Name: "k8s.get"},
-			brainspec.Capability{Name: "k8s.apply", Optional: true}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
@@ -80,7 +79,8 @@ func TestReconcileHappyPath(t *testing.T) {
 	}
 	res := Reconcile(context.Background(), in, puller, testProvider{})
 
-	if !res.BrainStatus["ops"].Ready || res.BrainStatus["ops"].BrainID != "ops" {
+	// BrainID is now digest/name.
+	if !res.BrainStatus["ops"].Ready || res.BrainStatus["ops"].BrainID != "sha256:ops/ops" {
 		t.Fatalf("brain status = %+v", res.BrainStatus["ops"])
 	}
 	if !res.ChannelStatus[ChannelKey(v1alpha1.KindTelegramChannel, "tg")].Ready {
@@ -99,120 +99,116 @@ func TestReconcileHappyPath(t *testing.T) {
 	if len(res.BrainRefs) != 1 || res.BrainRefs[0] != "ghcr/ops:1" {
 		t.Fatalf("brain refs = %v", res.BrainRefs)
 	}
-	// The pulled wasm is carried through for live runtime registration, keyed by
-	// the brain's declared id.
-	if len(res.Brains) != 1 || res.Brains[0].ID != "ops" ||
+	// ResolvedBrain carries the full digest/name ID.
+	if len(res.Brains) != 1 || res.Brains[0].ID != "sha256:ops/ops" ||
 		string(res.Brains[0].Wasm) != "\x00asm" || res.Brains[0].Digest != "sha256:ops" {
 		t.Fatalf("resolved brains = %+v", res.Brains)
 	}
-	// BindingRef is set so the supervisor can look up capability settings.
 	if res.Bindings[0].BindingRef != "ops-tg" {
 		t.Fatalf("BindingRef = %q, want ops-tg", res.Bindings[0].BindingRef)
 	}
 }
 
-func TestReconcileRejectsUndeclaredCapability(t *testing.T) {
+func TestReconcileMultiChannel(t *testing.T) {
+	// One binding targeting two channels (telegram + web).
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
-		Bindings:         []NamedBinding{bind("bad", "ops", v1alpha1.KindTelegramChannel, "tg", "k8s.delete")},
+		WebChannels:      []NamedWebChannel{{Name: "web", Spec: v1alpha1.WebChannelSpec{}}},
+		Bindings: []NamedBinding{{Name: "multi", Spec: v1alpha1.ChannelBindingSpec{
+			BrainRef: "ops",
+			Channels: []v1alpha1.ChannelRef{
+				{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
+				{Kind: v1alpha1.KindWebChannel, Name: "web"},
+			},
+			Capabilities: []v1alpha1.Capability{{Name: "k8s.get"}},
+		}}},
 	}
 	res := Reconcile(context.Background(), in, puller, testProvider{})
-	if res.BindingStatus["bad"].Ready {
-		t.Fatal("binding granting an undeclared capability should not be Ready")
+	if !res.BindingStatus["multi"].Ready {
+		t.Fatalf("multi-channel binding should be Ready: %+v", res.BindingStatus["multi"])
 	}
-	if len(res.Bindings) != 0 {
-		t.Fatal("no binding should be produced for an invalid binding")
+	if len(res.Bindings) != 2 {
+		t.Fatalf("expected 2 source bindings, got %d: %+v", len(res.Bindings), res.Bindings)
+	}
+	sources := map[string]bool{}
+	for _, b := range res.Bindings {
+		sources[b.Source] = true
+	}
+	if !sources["telegram"] || !sources["web"] {
+		t.Fatalf("expected telegram and web sources, got %+v", sources)
+	}
+	// Both SourceBindings share the same manifest digest.
+	if res.Bindings[0].Digest != res.Bindings[1].Digest {
+		t.Fatalf("expected same manifest digest for all channels, got %q and %q",
+			res.Bindings[0].Digest, res.Bindings[1].Digest)
 	}
 }
 
-func TestReconcileRejectsMissingRequired(t *testing.T) {
+func TestReconcileChildBrainValidation(t *testing.T) {
+	// A binding whose child references a brain not bundled in the artifact.
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
-		Bindings:         []NamedBinding{bind("bare", "ops", v1alpha1.KindTelegramChannel, "tg")}, // allowed: []
-	}
-	res := Reconcile(context.Background(), in, puller, testProvider{})
-	if res.BindingStatus["bare"].Ready {
-		t.Fatal("binding that omits a required capability should not be Ready")
-	}
-}
-
-func TestReconcileRejectsSettingsExceedingBounds(t *testing.T) {
-	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get", Settings: json.RawMessage(`{"ns":["a"]}`)}),
-	}}
-	in := Inputs{
-		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
-		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
-		Bindings: []NamedBinding{{Name: "wide", Spec: v1alpha1.ChannelBindingSpec{
-			BrainRef:   "ops",
-			ChannelRef: v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
-			Allowed: []v1alpha1.Capability{{
-				Name: "k8s.get",
-				Settings: map[string]v1alpha1.SettingValue{
-					"ns": {Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`["a","b"]`)},
-				},
+		Bindings: []NamedBinding{{Name: "bad", Spec: v1alpha1.ChannelBindingSpec{
+			BrainRef:     "ops",
+			Channels:     []v1alpha1.ChannelRef{{Kind: v1alpha1.KindTelegramChannel, Name: "tg"}},
+			Capabilities: []v1alpha1.Capability{{Name: "k8s.get"}},
+			Children: []v1alpha1.ChildSpec{{
+				Name:  "ghost",
+				Brain: "missing-brain",
 			}},
 		}}},
 	}
-	res := Reconcile(context.Background(), in, puller, testProvider{subsetErr: errors.New("wider than declared")})
-	if res.BindingStatus["wide"].Ready {
-		t.Fatal("binding whose settings exceed the brain's declaration should not be Ready")
+	res := Reconcile(context.Background(), in, puller, testProvider{})
+	if res.BindingStatus["bad"].Ready {
+		t.Fatal("binding referencing an unbundled child brain should not be Ready")
+	}
+	if res.BindingStatus["bad"].Message == "" {
+		t.Fatal("not-ready binding should carry a message")
 	}
 }
 
-func TestReconcileTreeRequiredUnion(t *testing.T) {
-	// The brain tree requires k8s.get at the root and llm.chat at a child; the
-	// flat grant must cover both.
-	// Root declares llm.chat (optional, so a parent can hold it for delegation);
-	// the child requires it, so the tree's required-union is {k8s.get, llm.chat}.
+func TestReconcileTreeChildren(t *testing.T) {
+	// A binding declaring a child that runs a bundled brain.
 	art := oci.Artifact{
-		Manifest: brainspec.Manifest{
-			ID: "ops",
-			Capabilities: []brainspec.Capability{
-				{Name: "k8s.get"},
-				{Name: "llm.chat", Optional: true},
-			},
-			Children: []brainspec.Child{{
-				Name:         "researcher",
-				Brain:        "ops",
-				Capabilities: []brainspec.Capability{{Name: "llm.chat"}},
-			}},
-		},
-		Wasm: []byte("\x00asm"), Digest: "sha256:ops",
+		Main:   "ops",
+		Brains: map[string][]byte{"ops": []byte("\x00asm")},
+		Digest: "sha256:ops",
 	}
 	puller := fakePuller{byRef: map[string]oci.Artifact{"ghcr/ops:1": art}}
-	base := Inputs{
+	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
+		Bindings: []NamedBinding{{Name: "full", Spec: v1alpha1.ChannelBindingSpec{
+			BrainRef:     "ops",
+			Channels:     []v1alpha1.ChannelRef{{Kind: v1alpha1.KindTelegramChannel, Name: "tg"}},
+			Capabilities: []v1alpha1.Capability{{Name: "k8s.get"}},
+			Children: []v1alpha1.ChildSpec{{
+				Name:         "researcher",
+				Brain:        "ops",
+				Capabilities: []v1alpha1.Capability{{Name: "llm.chat"}},
+			}},
+		}}},
 	}
-
-	// Grant covers only the root requirement → missing the child's → not ready.
-	partial := base
-	partial.Bindings = []NamedBinding{bind("partial", "ops", v1alpha1.KindTelegramChannel, "tg", "k8s.get")}
-	if res := Reconcile(context.Background(), partial, puller, testProvider{}); res.BindingStatus["partial"].Ready {
-		t.Fatal("grant missing the child's required capability should not be Ready")
-	}
-
-	// Grant covers the whole tree union → ready, and the child carries its cap.
-	full := base
-	full.Bindings = []NamedBinding{bind("full", "ops", v1alpha1.KindTelegramChannel, "tg", "k8s.get", "llm.chat")}
-	res := Reconcile(context.Background(), full, puller, testProvider{})
+	res := Reconcile(context.Background(), in, puller, testProvider{})
 	if !res.BindingStatus["full"].Ready {
-		t.Fatalf("grant covering the tree union should be Ready: %+v", res.BindingStatus["full"])
+		t.Fatalf("binding with valid children should be Ready: %+v", res.BindingStatus["full"])
 	}
 	m := res.Bindings[0].Manifest
-	if len(m.Children) != 1 || len(m.Children[0].Capabilities) != 1 || m.Children[0].Capabilities[0].Name != "llm.chat" {
+	if len(m.Children) != 1 || m.Children[0].Name != "researcher" {
 		t.Fatalf("child manifest = %+v", m.Children)
 	}
-	// Children must inherit BindingRef so they use the warmup store for secrets.
+	// Child Brain is expanded to artifactDigest/brainName.
+	if m.Children[0].Brain != "sha256:ops/ops" {
+		t.Fatalf("child Brain = %q, want sha256:ops/ops", m.Children[0].Brain)
+	}
 	if m.Children[0].BindingRef != "full" {
 		t.Fatalf("child BindingRef = %q, want full", m.Children[0].BindingRef)
 	}
@@ -220,7 +216,7 @@ func TestReconcileTreeRequiredUnion(t *testing.T) {
 
 func TestReconcileChannelKinds(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains: []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
@@ -247,17 +243,14 @@ func TestReconcileChannelKinds(t *testing.T) {
 
 func TestReconcileIsolatesFailures(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains: []NamedBrain{
 			{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}},
 			{Name: "broken", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/missing:1"}},
 		},
-		TelegramChannels: []NamedTelegramChannel{
-			telegram("tg"),
-			// A Slack channel missing subjects is not ready.
-		},
+		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
 		SlackChannels: []NamedSlackChannel{{Name: "bad", Spec: v1alpha1.SlackChannelSpec{
 			AppToken: v1alpha1.SecretSource{Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: "A"},
 			BotToken: v1alpha1.SecretSource{Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: "B"},
@@ -277,19 +270,17 @@ func TestReconcileIsolatesFailures(t *testing.T) {
 	}
 }
 
-// TestReconcileCapabilitySettingValidADT verifies that a capability with ADT
-// settings (literal and inPlaceEncrypted) passes reconcile validation.
 func TestReconcileCapabilitySettingValidADT(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "openai.chat"}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
 		Bindings: []NamedBinding{{Name: "b", Spec: v1alpha1.ChannelBindingSpec{
-			BrainRef:   "ops",
-			ChannelRef: v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
-			Allowed: []v1alpha1.Capability{{
+			BrainRef: "ops",
+			Channels: []v1alpha1.ChannelRef{{Kind: v1alpha1.KindTelegramChannel, Name: "tg"}},
+			Capabilities: []v1alpha1.Capability{{
 				Name: "openai.chat",
 				Settings: map[string]v1alpha1.SettingValue{
 					"base_url": {Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`"https://api.openai.com/v1"`)},
@@ -302,33 +293,25 @@ func TestReconcileCapabilitySettingValidADT(t *testing.T) {
 	if !res.BindingStatus["b"].Ready {
 		t.Fatalf("binding with valid ADT settings should be Ready: %+v", res.BindingStatus["b"])
 	}
-	if len(res.Bindings) != 1 {
-		t.Fatalf("expected 1 resolved binding, got %d", len(res.Bindings))
-	}
-	// CapabilitySettings carries all ADT values (including secrets) for Warmup.
 	capSettings := res.Bindings[0].CapabilitySettings
 	if capSettings["openai.chat"]["api_key"].Type != v1alpha1.SecretInPlaceEncrypted {
 		t.Fatalf("api_key setting not carried through: %+v", capSettings)
 	}
 }
 
-// TestReconcileCapabilitySettingInvalidSource verifies that an inPlaceEncrypted
-// setting with empty ciphertext causes not-ready.
 func TestReconcileCapabilitySettingInvalidSource(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "openai.chat"}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
 		Bindings: []NamedBinding{{Name: "bad", Spec: v1alpha1.ChannelBindingSpec{
-			BrainRef:   "ops",
-			ChannelRef: v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
-			Allowed: []v1alpha1.Capability{{
-				Name: "openai.chat",
-				Settings: map[string]v1alpha1.SettingValue{
-					"api_key": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: ""},
-				},
+			BrainRef: "ops",
+			Channels: []v1alpha1.ChannelRef{{Kind: v1alpha1.KindTelegramChannel, Name: "tg"}},
+			Capabilities: []v1alpha1.Capability{{
+				Name:     "openai.chat",
+				Settings: map[string]v1alpha1.SettingValue{"api_key": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: ""}},
 			}},
 		}}},
 	}
@@ -344,19 +327,17 @@ func TestReconcileCapabilitySettingInvalidSource(t *testing.T) {
 	}
 }
 
-// TestReconcileCapabilitySettingUnknownType verifies that an unknown setting
-// type causes not-ready.
 func TestReconcileCapabilitySettingUnknownType(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "openai.chat"}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
 		Bindings: []NamedBinding{{Name: "bad", Spec: v1alpha1.ChannelBindingSpec{
-			BrainRef:   "ops",
-			ChannelRef: v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
-			Allowed: []v1alpha1.Capability{{
+			BrainRef: "ops",
+			Channels: []v1alpha1.ChannelRef{{Kind: v1alpha1.KindTelegramChannel, Name: "tg"}},
+			Capabilities: []v1alpha1.Capability{{
 				Name:     "openai.chat",
 				Settings: map[string]v1alpha1.SettingValue{"api_key": {Type: "magic"}},
 			}},
@@ -368,20 +349,18 @@ func TestReconcileCapabilitySettingUnknownType(t *testing.T) {
 	}
 }
 
-// TestReconcileCapabilitySettingDoesNotBlockSiblings verifies that a bad ADT
-// setting in one binding does not prevent a sibling binding from resolving.
 func TestReconcileCapabilitySettingDoesNotBlockSiblings(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "openai.chat"}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
 		Bindings: []NamedBinding{
 			{Name: "bad", Spec: v1alpha1.ChannelBindingSpec{
-				BrainRef:   "ops",
-				ChannelRef: v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
-				Allowed: []v1alpha1.Capability{{
+				BrainRef: "ops",
+				Channels: []v1alpha1.ChannelRef{{Kind: v1alpha1.KindTelegramChannel, Name: "tg"}},
+				Capabilities: []v1alpha1.Capability{{
 					Name:     "openai.chat",
 					Settings: map[string]v1alpha1.SettingValue{"api_key": {Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: ""}},
 				}},
@@ -401,20 +380,18 @@ func TestReconcileCapabilitySettingDoesNotBlockSiblings(t *testing.T) {
 	}
 }
 
-// TestReconcileSystemPromptLiteral verifies that a literal system prompt is
-// resolved at reconcile time and stored in the manifest.
 func TestReconcileSystemPromptLiteral(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
 		Bindings: []NamedBinding{{Name: "b", Spec: v1alpha1.ChannelBindingSpec{
 			BrainRef:     "ops",
-			ChannelRef:   v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
+			Channels:     []v1alpha1.ChannelRef{{Kind: v1alpha1.KindTelegramChannel, Name: "tg"}},
 			SystemPrompt: v1alpha1.SettingValue{Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`"You are a helper."`)},
-			Allowed:      []v1alpha1.Capability{{Name: "k8s.get"}},
+			Capabilities: []v1alpha1.Capability{{Name: "k8s.get"}},
 		}}},
 	}
 	res := Reconcile(context.Background(), in, puller, testProvider{})
@@ -426,20 +403,18 @@ func TestReconcileSystemPromptLiteral(t *testing.T) {
 	}
 }
 
-// TestReconcileSystemPromptEncryptedRejected verifies that a non-literal system
-// prompt type causes not-ready (not yet supported).
 func TestReconcileSystemPromptEncryptedRejected(t *testing.T) {
 	puller := fakePuller{byRef: map[string]oci.Artifact{
-		"ghcr/ops:1": brainArtifact("ops", brainspec.Capability{Name: "k8s.get"}),
+		"ghcr/ops:1": brainArtifact("ops"),
 	}}
 	in := Inputs{
 		Brains:           []NamedBrain{{Name: "ops", Spec: v1alpha1.BrainSpec{Artifact: "ghcr/ops:1"}}},
 		TelegramChannels: []NamedTelegramChannel{telegram("tg")},
 		Bindings: []NamedBinding{{Name: "b", Spec: v1alpha1.ChannelBindingSpec{
 			BrainRef:     "ops",
-			ChannelRef:   v1alpha1.ChannelRef{Kind: v1alpha1.KindTelegramChannel, Name: "tg"},
+			Channels:     []v1alpha1.ChannelRef{{Kind: v1alpha1.KindTelegramChannel, Name: "tg"}},
 			SystemPrompt: v1alpha1.SettingValue{Type: v1alpha1.SecretInPlaceEncrypted, Ciphertext: "AAAA"},
-			Allowed:      []v1alpha1.Capability{{Name: "k8s.get"}},
+			Capabilities: []v1alpha1.Capability{{Name: "k8s.get"}},
 		}}},
 	}
 	res := Reconcile(context.Background(), in, puller, testProvider{})

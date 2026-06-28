@@ -1,8 +1,9 @@
 // Package oci pulls Aurora brain artifacts from OCI registries. A brain artifact
 // is an OCI image manifest whose config blob is the brain manifest
-// (brainspec.Manifest) and which carries the brain wasm as a layer. The pull core
-// is transport-agnostic so it can run against a real registry or an in-memory
-// store in tests.
+// (brainspec.Manifest) and which carries one WASM layer per named brain, each
+// annotated with aurora.brain.name so the puller can reconstruct the name→wasm
+// map without relying on layer order. The pull core is transport-agnostic so it
+// can run against a real registry or an in-memory store in tests.
 package oci
 
 import (
@@ -20,19 +21,23 @@ import (
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/brainspec"
 )
 
-// Media types for Aurora brain artifacts.
+// Media types and annotation keys for Aurora brain artifacts.
 const (
 	ArtifactType         = "application/vnd.aurora.brain.v1+json"
 	BrainConfigMediaType = "application/vnd.aurora.brain.config.v1+json"
 	BrainWasmMediaType   = "application/vnd.aurora.brain.wasm.v1+wasm"
+
+	// BrainNameAnnotation is the OCI layer annotation that carries a brain's
+	// short name. Every WASM layer in a brain artifact must carry this annotation.
+	BrainNameAnnotation = "aurora.brain.name"
 )
 
-// Artifact is a resolved brain: its declared manifest, the wasm bytes, and the
-// manifest digest (for pinning).
+// Artifact is a resolved brain bundle: the main entry-point name, every named
+// WASM binary keyed by its short name, and the manifest content digest.
 type Artifact struct {
-	Manifest brainspec.Manifest
-	Wasm     []byte
-	Digest   string
+	Main   string
+	Brains map[string][]byte // brain name → wasm bytes
+	Digest string
 }
 
 // Puller fetches a brain artifact by OCI reference.
@@ -64,20 +69,33 @@ func pull(ctx context.Context, target oras.ReadOnlyTarget, reference string) (Ar
 		return Artifact{}, err
 	}
 
-	var wasm []byte
+	brains := make(map[string][]byte, len(spec.Brains))
 	for _, layer := range manifest.Layers {
-		if layer.MediaType == BrainWasmMediaType {
-			wasm, err = fetchBlob(ctx, target, layer)
-			if err != nil {
-				return Artifact{}, fmt.Errorf("fetch brain wasm: %w", err)
-			}
-			break
+		if layer.MediaType != BrainWasmMediaType {
+			continue
+		}
+		name := layer.Annotations[BrainNameAnnotation]
+		if name == "" {
+			continue
+		}
+		wasm, err := fetchBlob(ctx, target, layer)
+		if err != nil {
+			return Artifact{}, fmt.Errorf("fetch brain wasm %q: %w", name, err)
+		}
+		brains[name] = wasm
+	}
+
+	for _, name := range spec.Brains {
+		if _, ok := brains[name]; !ok {
+			return Artifact{}, fmt.Errorf("artifact %q is missing wasm layer for brain %q", reference, name)
 		}
 	}
-	if len(wasm) == 0 {
-		return Artifact{}, fmt.Errorf("artifact %q has no %s layer", reference, BrainWasmMediaType)
-	}
-	return Artifact{Manifest: spec, Wasm: wasm, Digest: manifestDesc.Digest.String()}, nil
+
+	return Artifact{
+		Main:   spec.Main,
+		Brains: brains,
+		Digest: manifestDesc.Digest.String(),
+	}, nil
 }
 
 // fetchBlob fetches a descriptor's content, verifying its digest and size.

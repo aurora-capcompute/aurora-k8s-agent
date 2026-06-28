@@ -1,14 +1,13 @@
 // Package v1alpha1 defines the Aurora control-plane API. The model is decomposed
 // into three roles:
 //
-//   - Brain: an OCI brain artifact that *exposes an interface* — the capabilities
-//     its whole delegation tree (root + children, declared in the artifact)
-//     requires.
+//   - Brain: an OCI brain artifact that bundles one or more named WASM binaries.
+//     It carries no capability declarations — those live in the ChannelBinding.
 //   - typed Channel CRDs (SlackChannel/TelegramChannel/WebChannel): a transport
 //     plus its channel-native user/subject abstraction and its own credentials,
 //     each credential carried as a SecretSource (a tagged union).
-//   - ChannelBinding: *satisfies* a brain's interface with a single flat combined
-//     grant and *wires* the brain to a channel; validation happens here.
+//   - ChannelBinding: declares the capability tree (capabilities + delegation
+//     children), wires the brain to one or more channels, and resolves secrets.
 //
 // These are plain spec/status structs decoded from unstructured objects via the
 // dynamic client; they are not registered runtime.Objects, so no deepcopy/scheme
@@ -35,8 +34,7 @@ var ChannelKinds = []string{KindSlackChannel, KindTelegramChannel, KindWebChanne
 
 // --- Brain ---
 
-// BrainSpec references a brain OCI artifact. The artifact's manifest declares the
-// capability interface of the whole tree (root + children).
+// BrainSpec references a brain OCI artifact.
 type BrainSpec struct {
 	// Artifact is the OCI reference (e.g. ghcr.io/org/brain-k8s:1.4).
 	Artifact string `json:"artifact"`
@@ -130,10 +128,24 @@ type ChannelStatus struct {
 
 // --- ChannelBinding ---
 
-// Capability is a capability grant: a name plus optional scoped settings.
+// Capability is the unified declaration and grant for one capability: name,
+// optional flag, and scoped ADT settings. Optional capabilities whose provider
+// Normalize returns an error are silently skipped; required ones fail the binding.
 type Capability struct {
 	Name     string                  `json:"name"`
+	Optional bool                    `json:"optional,omitempty"`
 	Settings map[string]SettingValue `json:"settings,omitempty"`
+}
+
+// ChildSpec defines one node in the brain delegation tree.
+// Brain names the short WASM name within the artifact (not the k8s resource name).
+type ChildSpec struct {
+	Name         string       `json:"name"`
+	Brain        string       `json:"brain"`
+	SystemPrompt string       `json:"systemPrompt,omitempty"`
+	Capabilities []Capability `json:"capabilities,omitempty"`
+	Children     []ChildSpec  `json:"children,omitempty"`
+	OnFailure    string       `json:"onFailure,omitempty"`
 }
 
 // ChannelRef names a typed channel: its kind (SlackChannel/TelegramChannel/
@@ -143,24 +155,40 @@ type ChannelRef struct {
 	Name string `json:"name"`
 }
 
-// ChannelBindingSpec satisfies a brain's interface and wires it to a channel.
-// Allowed is the single flat combined grant for the whole brain tree: every
-// capability the tree requires must be present, scoped no wider than the brain
-// declares.
-//
-// Every capability constructor argument — api_key, base_url, allowed_models,
-// etc. — is expressed as a SettingValue so secrets and plain config share one
-// encoding. Settings are resolved once at channel instantiation time; no
-// env vars are used and nothing is stored on threads.
+// ChannelBindingSpec declares the capability tree and wires the brain to one or
+// more channels. Capabilities is the combined declaration+grant for the root brain.
+// Children defines the delegation tree. Channels replaces the old single channelRef.
 type ChannelBindingSpec struct {
 	BrainRef     string       `json:"brainRef"`
-	ChannelRef   ChannelRef   `json:"channelRef"`
+	Channels     []ChannelRef `json:"channels"`
 	SystemPrompt SettingValue `json:"systemPrompt,omitempty"`
-	Allowed      []Capability `json:"allowed"`
+	Capabilities []Capability `json:"capabilities"`
+	Children     []ChildSpec  `json:"children,omitempty"`
 }
 
 // ChannelBindingStatus reports validation state.
 type ChannelBindingStatus struct {
 	Ready   bool   `json:"ready"`
 	Message string `json:"message,omitempty"`
+}
+
+// ResolveLiterals extracts only the literal settings from a settings map,
+// returning them as a flat JSON object keyed by setting name.
+// Non-literal settings (encrypted, ref) are omitted — callers that need
+// decrypted values must resolve them before calling this function.
+func ResolveLiterals(settings map[string]SettingValue) json.RawMessage {
+	if len(settings) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	out := make(map[string]json.RawMessage, len(settings))
+	for k, v := range settings {
+		if v.Type == SettingLiteral && len(v.Value) > 0 {
+			out[k] = v.Value
+		}
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return b
 }

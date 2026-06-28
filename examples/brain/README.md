@@ -10,9 +10,6 @@ reference brain the project used to embed: a TinyGo Kubernetes/Helm operator.
 - `agent.go` — the brain (TinyGo, `//go:build tinygo`, Extism PDK). It runs an
   agentic loop, calling `openai.chat` to plan and the host-granted `k8s.*` /
   `helm.*` tools to act. `agent.input` / `agent.finish` are ABI host calls.
-- `manifest.json` — the brainspec: the capability *interface* the brain exposes.
-  `openai.chat` is required; the operational tools are optional, so a binding
-  grants whatever subset (and settings) it wants.
 - `build.sh` — compiles `agent.go` to `dist/kubernetes-agent.wasm` (TinyGo).
 
 ## Build and pack into a registry-less OCI layout
@@ -21,11 +18,10 @@ reference brain the project used to embed: a TinyGo Kubernetes/Helm operator.
 # 1. Compile the brain to wasm (needs TinyGo 0.41.x).
 sh examples/brain/build.sh
 
-# 2. Pack wasm + manifest into an on-disk OCI image layout.
+# 2. Pack wasm into an on-disk OCI image layout.
 go build -o bin/aurora-k8s-agent ./cmd/aurora-k8s-agent
 ./bin/aurora-k8s-agent pack-brain \
-  --wasm examples/brain/dist/kubernetes-agent.wasm \
-  --manifest examples/brain/manifest.json \
+  --brain kubernetes-agent:examples/brain/dist/kubernetes-agent.wasm \
   --out examples/brain/dist/layout
 ```
 

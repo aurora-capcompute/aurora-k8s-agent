@@ -4,8 +4,7 @@
 # Build from the repo root AFTER packing the brain layout:
 #   sh examples/brain/build.sh
 #   ./bin/aurora-k8s-agent pack-brain \
-#     --wasm examples/brain/dist/kubernetes-agent.wasm \
-#     --manifest examples/brain/manifest.json \
+#     --brain kubernetes-agent:examples/brain/dist/kubernetes-agent.wasm \
 #     --out examples/brain/dist/layout
 #   docker build -f examples/telegram-k8s/Dockerfile \
 #     -t ghcr.io/you/aurora-k8s-agent-k8sbrain:latest .

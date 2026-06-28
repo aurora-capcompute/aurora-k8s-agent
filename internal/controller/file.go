@@ -188,29 +188,6 @@ func decodeFsSpec(u *unstructured.Unstructured, kind string, out any, logger *sl
 	return true
 }
 
-// ScanBrainArtifacts reads Brain CRDs from dir and returns their artifact refs.
-// Used at startup to pre-load brains before the async reconcile loop fires, so
-// the runtime can restore previous sessions without a "brain not registered" error.
-// Parse failures are silently skipped — the reconcile loop will log them properly.
-func ScanBrainArtifacts(dir string) []string {
-	objs, err := readManifests(dir)
-	if err != nil {
-		return nil
-	}
-	var refs []string
-	for _, u := range objs {
-		if u.GetKind() != v1alpha1.KindBrain {
-			continue
-		}
-		var spec v1alpha1.BrainSpec
-		if err := decodeSpec(u, &spec); err != nil || spec.Artifact == "" {
-			continue
-		}
-		refs = append(refs, spec.Artifact)
-	}
-	return refs
-}
-
 // readManifests reads every YAML/JSON file in dir and decodes each document into
 // an unstructured object. Multi-document YAML files are supported.
 func readManifests(dir string) ([]*unstructured.Unstructured, error) {

@@ -5,10 +5,10 @@
 // specs so it can be unit-tested without a cluster; the informer wiring that
 // feeds it lives alongside.
 //
-// The model: a Brain artifact *exposes an interface* (the capabilities its whole
-// tree requires), a typed channel carries the transport plus its native subjects,
-// and a ChannelBinding *satisfies* the interface with a single flat grant and
-// wires the brain to the channel — validation happens here.
+// The model: a Brain artifact bundles named WASM binaries; a typed channel
+// carries the transport plus its native subjects; a ChannelBinding declares
+// the full capability tree (capabilities + children) and wires the brain to
+// one or more channels — validation happens here.
 package controller
 
 import (
@@ -24,7 +24,6 @@ import (
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/assembly"
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/binding"
-	"github.com/aurora-capcompute/aurora-k8s-agent/internal/brainspec"
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 )
 
@@ -98,15 +97,14 @@ type ResolvedChannel struct {
 func ChannelKey(kind, name string) string { return kind + "/" + name }
 
 type loadedBrain struct {
-	decl   brainspec.Manifest
-	ref    string
+	brains map[string][]byte // brain name → wasm bytes
+	main   string
 	digest string
-	wasm   []byte
+	ref    string
 }
 
-// ResolvedBrain is a ready brain artifact's runnable payload: the declared brain
-// id the runtime registers it under, its wasm, and its content digest. The agent
-// feeds these to runtime.SetBrains so Brain CRDs hot-load into a running runtime.
+// ResolvedBrain is a ready brain artifact's runnable payload: the namespaced
+// brain id (digest/name), its wasm, and its content digest.
 type ResolvedBrain struct {
 	ID     string
 	Digest string
@@ -114,8 +112,7 @@ type ResolvedBrain struct {
 }
 
 // resolvedChannel is a typed channel normalised to a transport source plus its
-// subjects and credential sources, after validation. bindings accumulates the
-// bindings that successfully resolve against it.
+// subjects and credential sources, after validation.
 type resolvedChannel struct {
 	kind     string
 	name     string
@@ -143,11 +140,9 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 			res.BrainStatus[b.Name] = v1alpha1.BrainStatus{Message: fmt.Sprintf("pull %s: %v", b.Spec.Artifact, err)}
 			continue
 		}
-		brains[b.Name] = loadedBrain{decl: artifact.Manifest, ref: b.Spec.Artifact, digest: artifact.Digest, wasm: artifact.Wasm}
-		res.BrainStatus[b.Name] = v1alpha1.BrainStatus{
-			Ready: true, Digest: artifact.Digest, BrainID: artifact.Manifest.ID,
-			Capabilities: capabilityNames(artifact.Manifest),
-		}
+		mainID := artifact.Digest + "/" + artifact.Main
+		brains[b.Name] = loadedBrain{brains: artifact.Brains, main: artifact.Main, digest: artifact.Digest, ref: b.Spec.Artifact}
+		res.BrainStatus[b.Name] = v1alpha1.BrainStatus{Ready: true, Digest: artifact.Digest, BrainID: mainID}
 	}
 
 	channels := make(map[string]*resolvedChannel)
@@ -160,22 +155,14 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 			res.BindingStatus[bnd.Name] = bindingNotReady("brain %q is not ready", bnd.Spec.BrainRef)
 			continue
 		}
-		channel, ok := channels[ChannelKey(bnd.Spec.ChannelRef.Kind, bnd.Spec.ChannelRef.Name)]
-		if !ok {
-			res.BindingStatus[bnd.Name] = bindingNotReady("channel %s/%s is not ready",
-				bnd.Spec.ChannelRef.Kind, bnd.Spec.ChannelRef.Name)
+
+		if err := validateChildBrains(bnd.Spec.Children, brain.brains); err != nil {
+			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
 			continue
 		}
 
-		settingsOK := true
-		for _, cap := range bnd.Spec.Allowed {
-			if err := validateCapabilitySettings(cap.Name, cap.Settings); err != nil {
-				res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
-				settingsOK = false
-				break
-			}
-		}
-		if !settingsOK {
+		if err := validateAllCapabilitySettings(bnd.Spec.Capabilities, bnd.Spec.Children); err != nil {
+			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
 			continue
 		}
 
@@ -185,31 +172,49 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 			continue
 		}
 
-		manifest, err := assembly.BuildManifest(brain.decl, brain.decl.ID, systemPrompt, bnd.Name, toCapabilities(bnd.Spec.Allowed), provider)
+		rootBrainID := brain.digest + "/" + brain.main
+		manifest, err := assembly.BuildManifest(rootBrainID, systemPrompt, bnd.Name, brain.digest,
+			bnd.Spec.Capabilities, bnd.Spec.Children, provider)
 		if err != nil {
 			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
 			continue
 		}
-		if err := validateCapabilityNorms(manifest, provider); err != nil {
-			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
+
+		// Resolve all channels before committing any SourceBindings.
+		if len(bnd.Spec.Channels) == 0 {
+			res.BindingStatus[bnd.Name] = bindingNotReady("no channels configured")
+			continue
+		}
+		var resolvedChans []*resolvedChannel
+		failed := false
+		for _, cref := range bnd.Spec.Channels {
+			ch, chOK := channels[ChannelKey(cref.Kind, cref.Name)]
+			if !chOK {
+				res.BindingStatus[bnd.Name] = bindingNotReady("channel %s/%s is not ready", cref.Kind, cref.Name)
+				failed = true
+				break
+			}
+			resolvedChans = append(resolvedChans, ch)
+		}
+		if failed {
 			continue
 		}
 
-		capSettings := make(map[string]map[string]v1alpha1.SettingValue, len(bnd.Spec.Allowed))
-		for _, cap := range bnd.Spec.Allowed {
-			capSettings[cap.Name] = cap.Settings
-		}
+		capSettings := collectCapabilitySettings(bnd.Spec.Capabilities)
+		md := digest(manifest)
 
-		resolved := binding.Resolved{
-			Users:              append([]string(nil), channel.users...),
-			Scopes:             append([]string(nil), channel.scopes...),
-			Manifest:           manifest,
-			Digest:             digest(manifest),
-			CapabilitySettings: capSettings,
-			BindingRef:         bnd.Name,
+		for _, ch := range resolvedChans {
+			resolved := binding.Resolved{
+				Users:              append([]string(nil), ch.users...),
+				Scopes:             append([]string(nil), ch.scopes...),
+				Manifest:           manifest,
+				Digest:             md,
+				CapabilitySettings: capSettings,
+				BindingRef:         bnd.Name,
+			}
+			res.Bindings = append(res.Bindings, SourceBinding{Source: ch.source, Name: bnd.Name, Resolved: resolved})
+			ch.bindings = append(ch.bindings, resolved)
 		}
-		res.Bindings = append(res.Bindings, SourceBinding{Source: channel.source, Name: bnd.Name, Resolved: resolved})
-		channel.bindings = append(channel.bindings, resolved)
 		refs[brain.ref] = struct{}{}
 		res.BindingStatus[bnd.Name] = v1alpha1.ChannelBindingStatus{Ready: true}
 	}
@@ -221,19 +226,17 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 }
 
 // collectBrains projects every ready brain into a runnable artifact for the
-// runtime, keyed by the brain's declared id (which is what manifests reference).
-// If two Brain resources declare the same id, the first by id order wins; the
-// result is sorted for a stable SetBrains apply.
+// runtime. Brain IDs are digest/name; the result is sorted for a stable apply.
 func collectBrains(brains map[string]loadedBrain) []ResolvedBrain {
-	byID := make(map[string]ResolvedBrain, len(brains))
+	byID := make(map[string]ResolvedBrain)
 	for _, b := range brains {
-		if len(b.wasm) == 0 {
-			continue
+		for name, wasm := range b.brains {
+			id := b.digest + "/" + name
+			if _, dup := byID[id]; dup {
+				continue
+			}
+			byID[id] = ResolvedBrain{ID: id, Digest: b.digest, Wasm: wasm}
 		}
-		if _, dup := byID[b.decl.ID]; dup {
-			continue
-		}
-		byID[b.decl.ID] = ResolvedBrain{ID: b.decl.ID, Digest: b.digest, Wasm: b.wasm}
 	}
 	out := make([]ResolvedBrain, 0, len(byID))
 	for _, rb := range byID {
@@ -360,6 +363,37 @@ func validateCapabilitySettings(capName string, settings map[string]v1alpha1.Set
 	return nil
 }
 
+// validateAllCapabilitySettings recursively validates ADT structure for
+// capabilities at the root node and all children.
+func validateAllCapabilitySettings(caps []v1alpha1.Capability, children []v1alpha1.ChildSpec) error {
+	for _, cap := range caps {
+		if err := validateCapabilitySettings(cap.Name, cap.Settings); err != nil {
+			return err
+		}
+	}
+	for _, ch := range children {
+		if err := validateAllCapabilitySettings(ch.Capabilities, ch.Children); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChildBrains checks that every ChildSpec.Brain names a WASM that is
+// bundled in the artifact. Typos or missing bundles surface at reconcile time
+// rather than as confusing runtime delegation failures.
+func validateChildBrains(children []v1alpha1.ChildSpec, available map[string][]byte) error {
+	for _, ch := range children {
+		if _, ok := available[ch.Brain]; !ok {
+			return fmt.Errorf("child %q references brain %q which is not bundled in the artifact", ch.Name, ch.Brain)
+		}
+		if err := validateChildBrains(ch.Children, available); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // resolveSystemPrompt extracts the system prompt string from its SettingValue.
 // Only literal type is supported; encrypted variants are rejected (use literal).
 func resolveSystemPrompt(sv v1alpha1.SettingValue) (string, error) {
@@ -377,18 +411,13 @@ func resolveSystemPrompt(sv v1alpha1.SettingValue) (string, error) {
 	}
 }
 
-// resolveLiterals extracts only literal-type settings to a plain JSON object.
-// Secret-type entries are dropped so they never appear in the manifest or reach
-// provider.IsSubset. Returns at least {} so callers always receive valid JSON.
-func resolveLiterals(settings map[string]v1alpha1.SettingValue) json.RawMessage {
-	out := make(map[string]json.RawMessage, len(settings))
-	for k, sv := range settings {
-		if sv.Type == v1alpha1.SettingLiteral {
-			out[k] = sv.Value
-		}
+// collectCapabilitySettings builds the CapabilitySettings map for a binding.
+func collectCapabilitySettings(caps []v1alpha1.Capability) map[string]map[string]v1alpha1.SettingValue {
+	out := make(map[string]map[string]v1alpha1.SettingValue, len(caps))
+	for _, c := range caps {
+		out[c.Name] = c.Settings
 	}
-	b, _ := json.Marshal(out)
-	return b
+	return out
 }
 
 func validateSubjects(users, scopes []string) error {
@@ -398,42 +427,10 @@ func validateSubjects(users, scopes []string) error {
 	return nil
 }
 
-// validateCapabilityNorms runs provider.Normalize on each root capability's
-// literal settings so bad base_url or header values are caught at reconcile
-// time rather than at first dispatch. The normalized result is discarded —
-// the manifest carries only informational capability names; resolved settings
-// live in the Provider warmup store keyed by BindingRef.
-func validateCapabilityNorms(m aurora.Manifest, provider aurora.DispatcherProvider) error {
-	for i := range m.Capabilities {
-		if _, err := provider.Normalize(m.Capabilities[i].Name, m.Capabilities[i].Settings); err != nil {
-			return fmt.Errorf("capability %q: %w", m.Capabilities[i].Name, err)
-		}
-	}
-	return nil
-}
-
-func toCapabilities(in []v1alpha1.Capability) []aurora.CapabilityConfig {
-	out := make([]aurora.CapabilityConfig, len(in))
-	for i, c := range in {
-		out[i] = aurora.CapabilityConfig{Name: c.Name, Settings: resolveLiterals(c.Settings)}
-	}
-	return out
-}
-
 // Digest returns the canonical content digest of a manifest, matching the digest
 // recorded on a resolved binding. It lets callers group threads by the manifest
 // that produced them.
 func Digest(m aurora.Manifest) string { return digest(m) }
-
-func capabilityNames(m brainspec.Manifest) []string {
-	names := m.DeclaredNames()
-	out := make([]string, 0, len(names))
-	for name := range names {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
 
 func bindingNotReady(format string, args ...any) v1alpha1.ChannelBindingStatus {
 	return v1alpha1.ChannelBindingStatus{Message: fmt.Sprintf(format, args...)}

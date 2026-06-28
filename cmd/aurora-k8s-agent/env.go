@@ -50,17 +50,6 @@ func env(name, fallback string) string {
 	return fallback
 }
 
-// splitList parses a comma-separated env value, trimming and dropping blanks.
-func splitList(raw string) []string {
-	var out []string
-	for _, part := range strings.Split(raw, ",") {
-		if part = strings.TrimSpace(part); part != "" {
-			out = append(out, part)
-		}
-	}
-	return out
-}
-
 // ociOptionsFromEnv builds registry-auth options shared by the brain provider and
 // the controller's puller.
 func ociOptionsFromEnv() []oci.Option {

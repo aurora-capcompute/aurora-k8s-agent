@@ -179,8 +179,8 @@ func TestManifestRoutes(t *testing.T) {
 
 	fake := &fakeRuntime{
 		threads: []aurora.ThreadSummary{
-			{ID: "t1", Manifest: manifest},                        // belongs to "ops"
-			{ID: "t2", Manifest: aurora.Manifest{Brain: "other"}}, // unrelated
+			{ID: "t1", Manifest: aurora.Manifest{Version: aurora.ManifestVersion, Brain: "kubernetes-agent", BindingRef: "ops"}},
+			{ID: "t2", Manifest: aurora.Manifest{Brain: "other"}}, // unrelated — no BindingRef
 		},
 		thread: aurora.ThreadSnapshot{ThreadSummary: aurora.ThreadSummary{ID: "new"}},
 	}

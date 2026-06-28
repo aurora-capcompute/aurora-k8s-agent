@@ -188,17 +188,18 @@ named at startup or from Brain CRDs supplied by the control plane. Set
 
 ```sh
 AURORA_BRAINS=ghcr.io/acme/brain-k8s:1.4,ghcr.io/acme/brain-ops:2.0
-AURORA_BRAIN_DEFAULT=brain-k8s          # optional; defaults to the first ref
 AURORA_REGISTRY_USERNAME=…              # optional registry auth
 AURORA_REGISTRY_PASSWORD=…
 ```
 
-A brain artifact is an OCI image whose config blob is the brain's **declaration**
-(`{id, capabilities: [{name, optional}]}`) and whose wasm is a layer
-(`application/vnd.aurora.brain.wasm.v1+wasm`). The declared capability set is the
-superset a manifest is checked against. With `AURORA_BRAINS` unset, the agent boots
-with no brain and gains them at runtime from Brain CRDs, which the control plane
-hot-loads via `runtime.SetBrains`. Brain bytes are pinned by digest.
+A brain artifact is an OCI image bundle. Its config blob is
+`{"abi":1,"main":"kubernetes-agent","brains":["kubernetes-agent"]}` and each
+brain is a separate layer annotated with `aurora.brain.name`
+(`application/vnd.aurora.brain.wasm.v1+wasm`). Pack an artifact with
+`aurora-k8s-agent pack-brain --brain name:brain.wasm --out ./layout`.
+With `AURORA_BRAINS` unset, the agent boots with no brain and gains them at
+runtime from Brain CRDs, which the control plane hot-loads via
+`runtime.SetBrains`. Brain bytes are pinned by digest.
 
 ### Control plane (CRDs)
 

@@ -37,10 +37,6 @@ type Config struct {
 	// Sources lists the enabled chat sources for the no-control-plane path.
 	Sources []string
 
-	// BrainRefs are the brains loaded at startup; empty boots brain-less.
-	BrainRefs    []string
-	BrainDefault string
-
 	MCPServers map[string]mcp.ServerConfig
 	OCIOptions []oci.Option
 }
@@ -62,9 +58,7 @@ func loadConfig() (Config, error) {
 		ResourcesDir:        strings.TrimSpace(os.Getenv("AURORA_RESOURCES_DIR")),
 		ResourcesResync:     30 * time.Second,
 		Sources:             sourceKinds(),
-		BrainRefs:           splitList(os.Getenv("AURORA_BRAINS")),
-		BrainDefault:        strings.TrimSpace(os.Getenv("AURORA_BRAIN_DEFAULT")),
-		OCIOptions:          ociOptionsFromEnv(),
+		OCIOptions: ociOptionsFromEnv(),
 	}
 	if raw := strings.TrimSpace(os.Getenv("AURORA_RESOURCES_RESYNC")); raw != "" {
 		parsed, err := time.ParseDuration(raw)

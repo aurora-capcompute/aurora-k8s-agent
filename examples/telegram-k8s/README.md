@@ -10,8 +10,7 @@ while the controller hot-loads it into the running agent.
 sh examples/brain/build.sh
 go build -o bin/aurora-k8s-agent ./cmd/aurora-k8s-agent
 ./bin/aurora-k8s-agent pack-brain \
-  --wasm examples/brain/dist/kubernetes-agent.wasm \
-  --manifest examples/brain/manifest.json \
+  --brain kubernetes-agent:examples/brain/dist/kubernetes-agent.wasm \
   --out examples/brain/dist/layout
 
 docker build -f examples/telegram-k8s/Dockerfile \

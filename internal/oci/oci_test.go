@@ -23,14 +23,19 @@ func pushBlob(ctx context.Context, t *testing.T, store *memory.Store, mediaType 
 	return desc
 }
 
-// packBrain pushes a brain artifact (config + wasm layer) and tags it.
-func packBrain(ctx context.Context, t *testing.T, store *memory.Store, ref string, config, wasm []byte, wasmType string) {
+// packBrain pushes a brain artifact with annotated WASM layers and tags it.
+func packBrain(ctx context.Context, t *testing.T, store *memory.Store, ref string, config []byte, brainWasms map[string][]byte) {
 	t.Helper()
 	cfg := pushBlob(ctx, t, store, BrainConfigMediaType, config)
-	layer := pushBlob(ctx, t, store, wasmType, wasm)
+	layers := make([]ocispec.Descriptor, 0, len(brainWasms))
+	for name, wasm := range brainWasms {
+		blobDesc := pushBlob(ctx, t, store, BrainWasmMediaType, wasm)
+		blobDesc.Annotations = map[string]string{BrainNameAnnotation: name}
+		layers = append(layers, blobDesc)
+	}
 	manifestDesc, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, ArtifactType, oras.PackManifestOptions{
 		ConfigDescriptor: &cfg,
-		Layers:           []ocispec.Descriptor{layer},
+		Layers:           layers,
 	})
 	if err != nil {
 		t.Fatalf("pack: %v", err)
@@ -44,33 +49,64 @@ func TestPullRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 	wasm := []byte("\x00asm-brain-bytes")
-	config := []byte(`{"id":"kubernetes-agent","abi":1,"capabilities":[{"name":"k8s.get"},{"name":"k8s.apply","optional":true}]}`)
-	packBrain(ctx, t, store, "brain:test", config, wasm, BrainWasmMediaType)
+	config := []byte(`{"abi":1,"main":"kubernetes-agent","brains":["kubernetes-agent"]}`)
+	packBrain(ctx, t, store, "brain:test", config, map[string][]byte{"kubernetes-agent": wasm})
 
 	art, err := pull(ctx, store, "brain:test")
 	if err != nil {
 		t.Fatalf("pull: %v", err)
 	}
-	if art.Manifest.ID != "kubernetes-agent" {
-		t.Fatalf("id = %q", art.Manifest.ID)
+	if art.Main != "kubernetes-agent" {
+		t.Fatalf("main = %q", art.Main)
 	}
-	if !bytes.Equal(art.Wasm, wasm) {
-		t.Fatalf("wasm mismatch: %q", art.Wasm)
+	if !bytes.Equal(art.Brains["kubernetes-agent"], wasm) {
+		t.Fatalf("wasm mismatch")
 	}
 	if art.Digest == "" {
 		t.Fatal("missing manifest digest")
 	}
-	if c, ok := art.Manifest.Declared("k8s.apply"); !ok || !c.Optional {
-		t.Fatalf("k8s.apply optional declaration lost: %+v ok=%v", c, ok)
+}
+
+func TestPullMultiBrain(t *testing.T) {
+	ctx := context.Background()
+	store := memory.New()
+	config := []byte(`{"abi":1,"main":"root","brains":["root","scout"]}`)
+	wasms := map[string][]byte{
+		"root":  []byte("\x00asm-root"),
+		"scout": []byte("\x00asm-scout"),
+	}
+	packBrain(ctx, t, store, "brain:multi", config, wasms)
+
+	art, err := pull(ctx, store, "brain:multi")
+	if err != nil {
+		t.Fatalf("pull: %v", err)
+	}
+	if art.Main != "root" {
+		t.Fatalf("main = %q", art.Main)
+	}
+	if len(art.Brains) != 2 {
+		t.Fatalf("brains = %v", art.Brains)
+	}
+	if !bytes.Equal(art.Brains["root"], wasms["root"]) || !bytes.Equal(art.Brains["scout"], wasms["scout"]) {
+		t.Fatal("wasm content mismatch")
 	}
 }
 
 func TestPullRejectsMissingWasmLayer(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
-	config := []byte(`{"id":"x","abi":1,"capabilities":[]}`)
-	// Wrong layer media type → no brain wasm present.
-	packBrain(ctx, t, store, "brain:nowasm", config, []byte("data"), "application/octet-stream")
+	config := []byte(`{"abi":1,"main":"x","brains":["x"]}`)
+	// Provide no WASM layer at all → pull should error.
+	cfg := pushBlob(ctx, t, store, BrainConfigMediaType, config)
+	manifestDesc, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, ArtifactType, oras.PackManifestOptions{
+		ConfigDescriptor: &cfg,
+	})
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	if err := store.Tag(ctx, manifestDesc, "brain:nowasm"); err != nil {
+		t.Fatalf("tag: %v", err)
+	}
 
 	if _, err := pull(ctx, store, "brain:nowasm"); err == nil {
 		t.Fatal("expected error when no brain wasm layer is present")
@@ -81,18 +117,16 @@ func TestPullRejectsIncompatibleABI(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	// A brain declaring a different host-call ABI than the host implements must
-	// be refused at load.
-	future := []byte(`{"id":"future","abi":2,"capabilities":[]}`)
-	packBrain(ctx, t, store, "brain:future", future, []byte("\x00asm-future"), BrainWasmMediaType)
+	future := []byte(`{"abi":2,"main":"future","brains":["future"]}`)
+	packBrain(ctx, t, store, "brain:future", future, map[string][]byte{"future": []byte("\x00asm-future")})
 	_, err := pull(ctx, store, "brain:future")
 	if !errors.Is(err, brainspec.ErrIncompatibleABI) {
 		t.Fatalf("future ABI error = %v, want ErrIncompatibleABI", err)
 	}
 
-	// An undeclared ABI (0) is likewise refused — a brain must declare it.
-	undeclared := []byte(`{"id":"legacy","capabilities":[]}`)
-	packBrain(ctx, t, store, "brain:legacy", undeclared, []byte("\x00asm-legacy"), BrainWasmMediaType)
+	// An undeclared ABI (0) is likewise refused.
+	undeclared := []byte(`{"abi":0,"main":"legacy","brains":["legacy"]}`)
+	packBrain(ctx, t, store, "brain:legacy", undeclared, map[string][]byte{"legacy": []byte("\x00asm-legacy")})
 	if _, err := pull(ctx, store, "brain:legacy"); !errors.Is(err, brainspec.ErrIncompatibleABI) {
 		t.Fatalf("undeclared ABI error = %v, want ErrIncompatibleABI", err)
 	}
@@ -101,8 +135,8 @@ func TestPullRejectsIncompatibleABI(t *testing.T) {
 func TestPullRejectsBadConfig(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
-	config := []byte(`{"capabilities":[]}`) // missing id
-	packBrain(ctx, t, store, "brain:badcfg", config, []byte("\x00asm"), BrainWasmMediaType)
+	config := []byte(`{"abi":1}`) // missing main
+	packBrain(ctx, t, store, "brain:badcfg", config, map[string][]byte{"x": []byte("\x00asm")})
 
 	if _, err := pull(ctx, store, "brain:badcfg"); err == nil {
 		t.Fatal("expected error for invalid brain config")

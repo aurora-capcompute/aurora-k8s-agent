@@ -1,80 +1,29 @@
 package assembly
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 
-	"github.com/aurora-capcompute/aurora-k8s-agent/internal/brainspec"
+	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
 )
 
-// ValidateGrant enforces the privilege boundary between a brain and a function
-// instance: the capabilities the instance grants must be a valid subset of what
-// the brain declares.
-//
-//   - every granted capability must be declared by the brain;
-//   - every required (non-optional) declared capability must be granted;
-//   - where the brain declares settings for a capability, the granted settings
-//     must be within them (provider.IsSubset) — e.g. a narrower namespace set.
-func ValidateGrant(decl brainspec.Manifest, granted []aurora.CapabilityConfig, provider aurora.DispatcherProvider) error {
-	grantedNames := make(map[string]struct{}, len(granted))
-	for _, cap := range granted {
-		declared, ok := decl.Declared(cap.Name)
-		if !ok {
-			return fmt.Errorf("capability %q is not declared by brain %q", cap.Name, decl.ID)
-		}
-		if len(declared.Settings) > 0 {
-			if err := provider.IsSubset(cap.Name, declared.Settings, cap.Settings); err != nil {
-				return fmt.Errorf("capability %q exceeds brain %q declaration: %w", cap.Name, decl.ID, err)
-			}
-		}
-		grantedNames[cap.Name] = struct{}{}
-	}
-	for _, required := range decl.Required() {
-		if _, ok := grantedNames[required]; !ok {
-			return fmt.Errorf("brain %q requires capability %q, which the instance does not grant", decl.ID, required)
-		}
-	}
-	return nil
-}
-
-// BuildManifest projects a brain's declared tree plus a single flat grant into a
-// runtime manifest, validating as it goes — the "binding satisfies the brain's
-// interface" check, generalised over the whole tree:
-//
-//   - every name in allowed must be declared somewhere in the tree;
-//   - at each node, every required (non-optional) declared capability must be in
-//     allowed, and each granted capability's settings must be within that node's
-//     declared settings (provider.IsSubset);
-//   - each node carries exactly the intersection of its declared capabilities and
-//     the grant, so the grant is a ceiling and per-node granularity stays with the
-//     brain's declaration.
-//
-// bindingName is stored as BindingRef in the manifest so Provider.Warmup can
-// look up resolved secrets at dispatch time; pass "" for file-based bindings.
+// BuildManifest constructs an aurora.Manifest from the ChannelBinding's
+// capability and delegation tree. provider.Normalize is called for each
+// capability to fill defaults and validate settings; optional capabilities
+// whose Normalize returns an error are silently skipped, required ones fail
+// the manifest. Children are wired to the same artifact via artifactDigest.
 func BuildManifest(
-	decl brainspec.Manifest,
-	brainID, systemPrompt, bindingName string,
-	allowed []aurora.CapabilityConfig,
+	brainID, systemPrompt, bindingName, artifactDigest string,
+	caps []v1alpha1.Capability,
+	children []v1alpha1.ChildSpec,
 	provider aurora.DispatcherProvider,
 ) (aurora.Manifest, error) {
-	grant := make(map[string]json.RawMessage, len(allowed))
-	for _, cap := range allowed {
-		grant[cap.Name] = cap.Settings
-	}
-	declared := decl.DeclaredNames()
-	for name := range grant {
-		if _, ok := declared[name]; !ok {
-			return aurora.Manifest{}, fmt.Errorf("capability %q is not declared by brain %q (repack the brain to include it)", name, decl.ID)
-		}
-	}
-
-	rootCaps, err := nodeCaps(decl.ID, decl.Capabilities, grant, provider)
+	rootCaps, err := nodeCaps(caps, provider)
 	if err != nil {
 		return aurora.Manifest{}, err
 	}
-	children, err := buildChildren(decl.Children, grant, bindingName, provider)
+	ch, err := buildChildren(children, bindingName, artifactDigest, provider)
 	if err != nil {
 		return aurora.Manifest{}, err
 	}
@@ -84,27 +33,27 @@ func BuildManifest(
 		BindingRef:   bindingName,
 		SystemPrompt: systemPrompt,
 		Capabilities: rootCaps,
-		Children:     children,
+		Children:     ch,
 	}, nil
 }
 
-func buildChildren(children []brainspec.Child, grant map[string]json.RawMessage, bindingName string, provider aurora.DispatcherProvider) ([]aurora.ChildManifest, error) {
+func buildChildren(children []v1alpha1.ChildSpec, bindingName, artifactDigest string, provider aurora.DispatcherProvider) ([]aurora.ChildManifest, error) {
 	if len(children) == 0 {
 		return nil, nil
 	}
 	out := make([]aurora.ChildManifest, 0, len(children))
 	for _, ch := range children {
-		caps, err := nodeCaps(ch.Name, ch.Capabilities, grant, provider)
+		caps, err := nodeCaps(ch.Capabilities, provider)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("child %q: %w", ch.Name, err)
 		}
-		sub, err := buildChildren(ch.Children, grant, bindingName, provider)
+		sub, err := buildChildren(ch.Children, bindingName, artifactDigest, provider)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, aurora.ChildManifest{
 			Name:         ch.Name,
-			Brain:        ch.Brain,
+			Brain:        artifactDigest + "/" + ch.Brain,
 			BindingRef:   bindingName,
 			SystemPrompt: ch.SystemPrompt,
 			Capabilities: caps,
@@ -115,40 +64,20 @@ func buildChildren(children []brainspec.Child, grant map[string]json.RawMessage,
 	return out, nil
 }
 
-// nodeCaps narrows one node's declared capabilities by the flat grant: every
-// required capability must be granted, and granted settings must be within the
-// node's declared settings.
-func nodeCaps(node string, declared []brainspec.Capability, grant map[string]json.RawMessage, provider aurora.DispatcherProvider) ([]aurora.CapabilityConfig, error) {
+// nodeCaps resolves one node's capabilities via provider.Normalize. Optional
+// capabilities that Normalize rejects are skipped; required ones fail.
+func nodeCaps(caps []v1alpha1.Capability, provider aurora.DispatcherProvider) ([]aurora.CapabilityConfig, error) {
 	var out []aurora.CapabilityConfig
-	for _, dc := range declared {
-		settings, granted := grant[dc.Name]
-		if !granted {
-			if !dc.Optional {
-				return nil, fmt.Errorf("node %q requires capability %q, which the binding does not grant", node, dc.Name)
+	for _, c := range caps {
+		settings := v1alpha1.ResolveLiterals(c.Settings)
+		normalized, err := provider.Normalize(c.Name, settings)
+		if err != nil {
+			if c.Optional {
+				continue
 			}
-			continue
+			return nil, fmt.Errorf("capability %q: %w", c.Name, err)
 		}
-		if len(dc.Settings) > 0 {
-			if err := provider.IsSubset(dc.Name, dc.Settings, settings); err != nil {
-				return nil, fmt.Errorf("node %q capability %q exceeds brain declaration: %w", node, dc.Name, err)
-			}
-		}
-		out = append(out, aurora.CapabilityConfig{Name: dc.Name, Settings: settings})
+		out = append(out, aurora.CapabilityConfig{Name: c.Name, Settings: normalized})
 	}
 	return out, nil
-}
-
-// ValidateManifest validates a function-instance manifest against the brain it
-// names: the brain must be loaded, and the grant must be a valid subset of the
-// brain's declaration.
-func (p *OCIBrainProvider) ValidateManifest(manifest aurora.Manifest, provider aurora.DispatcherProvider) error {
-	brainID := manifest.Brain
-	if brainID == "" {
-		brainID = p.defaultID
-	}
-	decl, ok := p.specs[brainID]
-	if !ok {
-		return fmt.Errorf("brain %q is not loaded", brainID)
-	}
-	return ValidateGrant(decl, manifest.Capabilities, provider)
 }

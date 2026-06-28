@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS processed_events (
 
 func now() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
+
 func (s *Store) Conversation(ctx context.Context, userID, channelID string) (Conversation, bool, error) {
 	var value Conversation
 	err := s.db.QueryRowContext(ctx, `
