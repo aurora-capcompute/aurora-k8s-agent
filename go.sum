@@ -1,3 +1,17 @@
+github.com/aurora-capcompute/aurora-capcompute v0.0.0-20260629161353-f5d77c15d56a h1:EugVeUOWcHo5/rC9mWChRXlw7BgXjayZrjF0uVPoHx0=
+github.com/aurora-capcompute/aurora-capcompute v0.0.0-20260629161353-f5d77c15d56a/go.mod h1:SZ0HrOMfCVx3uBpiZNJyg6/M3xY+7ndVMWKv0PaEJTA=
+github.com/aurora-capcompute/aurora-dispatchers v0.0.0-20260629161346-52a96ac6ce45 h1:NutDdHyPUyDfXDk2LztgjlqSBvbpjnE4Ienr63x0PhU=
+github.com/aurora-capcompute/aurora-dispatchers v0.0.0-20260629161346-52a96ac6ce45/go.mod h1:KWmwX3cgtkGXreqN/HU9d+ML6eyDFfwIrU8528XKWEk=
+github.com/aurora-capcompute/aurora-dispatchers-helm v0.0.0-20260629161724-95ab154917c6 h1:DTX83aZlju8ltrF5/JNprf58EZn9i6wQLKyvEJAUplA=
+github.com/aurora-capcompute/aurora-dispatchers-helm v0.0.0-20260629161724-95ab154917c6/go.mod h1:wn+UZm8jCWOAnoVkuUJj6YAIunsxfSKPbTgEXocJnEc=
+github.com/aurora-capcompute/aurora-dispatchers-k8s v0.0.0-20260629161726-99e98510a775 h1:VNTMhGoOZZh52kxgkHrOLppSbLMAMXRx1Aq2SeQVhtM=
+github.com/aurora-capcompute/aurora-dispatchers-k8s v0.0.0-20260629161726-99e98510a775/go.mod h1:POs5CFwild5K38AsgDO6ZyZRDU2XG0wyRdGWwUd0tr0=
+github.com/aurora-capcompute/aurora-dispatchers-llm v0.0.0-20260629161728-89f9917b4689 h1:vaGZSiUoxStk5auT2qqU2ojnlpsl1Z+/mMcVFXq5vdo=
+github.com/aurora-capcompute/aurora-dispatchers-llm v0.0.0-20260629161728-89f9917b4689/go.mod h1:OigwCdUCdaElGIr/Q8O4+aSEInBlIY1pm63YsywGKXM=
+github.com/aurora-capcompute/aurora-stores v0.0.0-20260629161752-bfe30a60b688 h1:qk7NeLqrW4beyMfcmUrx1jM5O373Ej6AmgtPqq6MBU0=
+github.com/aurora-capcompute/aurora-stores v0.0.0-20260629161752-bfe30a60b688/go.mod h1:7px0K6x8T6Y9d//VXKYs+qSkHEZsg5Z6iaOCVz2z+tQ=
+github.com/aurora-capcompute/capcompute v0.0.0-20260627172717-954ff0270676 h1:KNTXKfuUJgT6xnRSnTL4IYe2E87bXrr01ay7rJwmylo=
+github.com/aurora-capcompute/capcompute v0.0.0-20260627172717-954ff0270676/go.mod h1:mj6yFasv226xeH9QkiUm72zWDEhTlWAFks4IfWj/C0Y=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
