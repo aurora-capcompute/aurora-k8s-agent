@@ -2,222 +2,16 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: brains.aurora.dev
+  name: manifests.aurora.dev
   labels:
     {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
 spec:
   group: aurora.dev
   scope: Namespaced
   names:
-    kind: Brain
-    plural: brains
-    singular: brain
-  versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: Artifact
-          type: string
-          jsonPath: .spec.artifact
-        - name: Ready
-          type: boolean
-          jsonPath: .status.ready
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              required: [artifact]
-              properties:
-                artifact:
-                  type: string
-                pullSecretRef:
-                  type: string
-            status:
-              type: object
-              x-kubernetes-preserve-unknown-fields: true
----
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: slackchannels.aurora.dev
-  labels:
-    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
-spec:
-  group: aurora.dev
-  scope: Namespaced
-  names:
-    kind: SlackChannel
-    plural: slackchannels
-    singular: slackchannel
-  versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: Ready
-          type: boolean
-          jsonPath: .status.ready
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              required: [appToken, botToken, users, scopes]
-              properties:
-                appToken:
-                  type: object
-                  required: [type]
-                  properties:
-                    type:
-                      type: string
-                      enum: [inPlaceEncrypted, secretStorage]
-                    ciphertext:
-                      type: string
-                    ref:
-                      type: object
-                      properties:
-                        name: { type: string }
-                        key: { type: string }
-                botToken:
-                  type: object
-                  required: [type]
-                  properties:
-                    type:
-                      type: string
-                      enum: [inPlaceEncrypted, secretStorage]
-                    ciphertext:
-                      type: string
-                    ref:
-                      type: object
-                      properties:
-                        name: { type: string }
-                        key: { type: string }
-                users:
-                  type: array
-                  items: { type: string }
-                scopes:
-                  type: array
-                  items: { type: string }
-            status:
-              type: object
-              x-kubernetes-preserve-unknown-fields: true
----
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: telegramchannels.aurora.dev
-  labels:
-    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
-spec:
-  group: aurora.dev
-  scope: Namespaced
-  names:
-    kind: TelegramChannel
-    plural: telegramchannels
-    singular: telegramchannel
-  versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: Ready
-          type: boolean
-          jsonPath: .status.ready
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              required: [botToken, users, scopes]
-              properties:
-                botToken:
-                  type: object
-                  required: [type]
-                  properties:
-                    type:
-                      type: string
-                      enum: [inPlaceEncrypted, secretStorage]
-                    ciphertext:
-                      type: string
-                    ref:
-                      type: object
-                      properties:
-                        name: { type: string }
-                        key: { type: string }
-                users:
-                  type: array
-                  items: { type: string }
-                scopes:
-                  type: array
-                  items: { type: string }
-            status:
-              type: object
-              x-kubernetes-preserve-unknown-fields: true
----
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: webchannels.aurora.dev
-  labels:
-    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
-spec:
-  group: aurora.dev
-  scope: Namespaced
-  names:
-    kind: WebChannel
-    plural: webchannels
-    singular: webchannel
-  versions:
-    - name: v1alpha1
-      served: true
-      storage: true
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: Ready
-          type: boolean
-          jsonPath: .status.ready
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              properties:
-                users:
-                  type: array
-                  items: { type: string }
-                scopes:
-                  type: array
-                  items: { type: string }
-            status:
-              type: object
-              x-kubernetes-preserve-unknown-fields: true
----
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: channelbindings.aurora.dev
-  labels:
-    {{- include "aurora-k8s-agent.labels" . | nindent 4 }}
-spec:
-  group: aurora.dev
-  scope: Namespaced
-  names:
-    kind: ChannelBinding
-    plural: channelbindings
-    singular: channelbinding
+    kind: Manifest
+    plural: manifests
+    singular: manifest
   versions:
     - name: v1alpha1
       served: true
@@ -227,10 +21,7 @@ spec:
       additionalPrinterColumns:
         - name: Brain
           type: string
-          jsonPath: .spec.brainRef
-        - name: Channel
-          type: string
-          jsonPath: .spec.channelRef.name
+          jsonPath: .spec.brain.artifact
         - name: Ready
           type: boolean
           jsonPath: .status.ready
@@ -240,19 +31,131 @@ spec:
           properties:
             spec:
               type: object
-              required: [brainRef, channelRef, allowed]
+              required: [brain, channels, capabilities]
               properties:
-                brainRef:
-                  type: string
-                channelRef:
+                brain:
                   type: object
-                  required: [kind, name]
+                  required: [artifact]
                   properties:
-                    kind:
+                    artifact:
                       type: string
-                      enum: [SlackChannel, TelegramChannel, WebChannel]
-                    name:
+                    pullSecretRef:
                       type: string
+                channels:
+                  type: array
+                  items:
+                    type: object
+                    required: [kind, name]
+                    properties:
+                      kind:
+                        type: string
+                        enum: [SlackChannel, TelegramChannel, WebChannel]
+                      name:
+                        type: string
+                      slack:
+                        type: object
+                        required: [appToken, botToken, users, scopes]
+                        properties:
+                          appToken:
+                            type: object
+                            required: [type]
+                            properties:
+                              type:
+                                type: string
+                                enum: [inPlaceEncrypted, secretStorage]
+                              ciphertext:
+                                type: string
+                              ref:
+                                type: object
+                                properties:
+                                  name: { type: string }
+                                  key: { type: string }
+                          botToken:
+                            type: object
+                            required: [type]
+                            properties:
+                              type:
+                                type: string
+                                enum: [inPlaceEncrypted, secretStorage]
+                              ciphertext:
+                                type: string
+                              ref:
+                                type: object
+                                properties:
+                                  name: { type: string }
+                                  key: { type: string }
+                          users:
+                            type: array
+                            items: { type: string }
+                          scopes:
+                            type: array
+                            items: { type: string }
+                      telegram:
+                        type: object
+                        required: [botToken, users, scopes]
+                        properties:
+                          botToken:
+                            type: object
+                            required: [type]
+                            properties:
+                              type:
+                                type: string
+                                enum: [inPlaceEncrypted, secretStorage]
+                              ciphertext:
+                                type: string
+                              ref:
+                                type: object
+                                properties:
+                                  name: { type: string }
+                                  key: { type: string }
+                          users:
+                            type: array
+                            items: { type: string }
+                          scopes:
+                            type: array
+                            items: { type: string }
+                      web:
+                        type: object
+                        properties:
+                          token:
+                            type: object
+                            required: [type]
+                            properties:
+                              type:
+                                type: string
+                                enum: [inPlaceEncrypted, secretStorage]
+                              ciphertext:
+                                type: string
+                              ref:
+                                type: object
+                                properties:
+                                  name: { type: string }
+                                  key: { type: string }
+                          users:
+                            type: array
+                            items:
+                              type: object
+                              required: [name, password]
+                              properties:
+                                name:
+                                  type: string
+                                password:
+                                  type: object
+                                  required: [type]
+                                  properties:
+                                    type:
+                                      type: string
+                                      enum: [inPlaceEncrypted, secretStorage]
+                                    ciphertext:
+                                      type: string
+                                    ref:
+                                      type: object
+                                      properties:
+                                        name: { type: string }
+                                        key: { type: string }
+                          scopes:
+                            type: array
+                            items: { type: string }
                 systemPrompt:
                   type: object
                   required: [type]
@@ -267,9 +170,9 @@ spec:
                     ref:
                       type: object
                       properties:
-                        name: {type: string}
-                        key: {type: string}
-                allowed:
+                        name: { type: string }
+                        key: { type: string }
+                capabilities:
                   type: array
                   items:
                     type: object
@@ -293,8 +196,13 @@ spec:
                             ref:
                               type: object
                               properties:
-                                name: {type: string}
-                                key: {type: string}
+                                name: { type: string }
+                                key: { type: string }
+                children:
+                  type: array
+                  x-kubernetes-preserve-unknown-fields: true
+                  items:
+                    type: object
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

@@ -1,8 +1,8 @@
 #!/bin/sh
 # Run the example brain over Telegram, locally, with no Kubernetes and no
 # registry. It builds + packs the brain into an on-disk OCI layout, seals the bot
-# token, renders the same Brain/TelegramChannel/ChannelBinding resources you would
-# apply in k8s, and starts the agent against the filesystem control plane.
+# token, renders the same Manifest resource you would apply in k8s, and starts
+# the agent against the filesystem control plane.
 #
 # Required (via env or examples/telegram-local/.env):
 #   TELEGRAM_BOT_TOKEN  bot token from @BotFather
@@ -52,18 +52,16 @@ layout="$(pwd)/examples/brain/dist/layout"
 # Seal the bot token with the same key the agent decrypts with.
 sealed="$(printf %s "$TELEGRAM_BOT_TOKEN" | ./bin/aurora-k8s-agent seal-secret)"
 
-# Render the control-plane resources from the committed templates.
+# Render the control-plane Manifest from the committed template.
 res="$dist/resources"
 rm -rf "$res"
 mkdir -p "$res"
-for f in brain telegramchannel channelbinding; do
-  sed \
-    -e "s|__BRAIN_LAYOUT__|$layout|g" \
-    -e "s|__SEALED_TOKEN__|$sealed|g" \
-    -e "s|__TELEGRAM_USER_ID__|$TELEGRAM_USER_ID|g" \
-    -e "s|__TELEGRAM_CHAT_ID__|$TELEGRAM_CHAT_ID|g" \
-    "$here/resources/$f.yaml" > "$res/$f.yaml"
-done
+sed \
+  -e "s|__BRAIN_LAYOUT__|$layout|g" \
+  -e "s|__SEALED_TOKEN__|$sealed|g" \
+  -e "s|__TELEGRAM_USER_ID__|$TELEGRAM_USER_ID|g" \
+  -e "s|__TELEGRAM_CHAT_ID__|$TELEGRAM_CHAT_ID|g" \
+  "$here/resources/manifest.yaml" > "$res/manifest.yaml"
 
 # Start the agent: the fs control plane reads the rendered resources, hot-loads
 # the brain via SetBrains, and the channel supervisor opens the Telegram bridge.

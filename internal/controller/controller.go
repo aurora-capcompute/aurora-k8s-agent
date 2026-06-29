@@ -21,16 +21,12 @@ import (
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 )
 
-// GroupVersionResources for the control-plane kinds.
+// GroupVersionResources for the control-plane kind.
 var (
-	brainGVR    = gvr("brains")
-	slackGVR    = gvr("slackchannels")
-	telegramGVR = gvr("telegramchannels")
-	webGVR      = gvr("webchannels")
-	bindingGVR  = gvr("channelbindings")
+	manifestGVR = gvr("manifests")
 
 	// controlPlaneGVRs is the watch set, in a stable order.
-	controlPlaneGVRs = []schema.GroupVersionResource{brainGVR, slackGVR, telegramGVR, webGVR, bindingGVR}
+	controlPlaneGVRs = []schema.GroupVersionResource{manifestGVR}
 )
 
 func gvr(resource string) schema.GroupVersionResource {
@@ -121,65 +117,25 @@ func (c *Controller) enqueue() {
 }
 
 func (c *Controller) reconcileOnce(ctx context.Context) {
-	brainObjs := c.list(brainGVR)
-	slackObjs := c.list(slackGVR)
-	telegramObjs := c.list(telegramGVR)
-	webObjs := c.list(webGVR)
-	bindingObjs := c.list(bindingGVR)
+	manifestObjs := c.list(manifestGVR)
 
 	var in Inputs
-	for _, u := range brainObjs {
-		var spec v1alpha1.BrainSpec
-		if c.decode(u, v1alpha1.KindBrain, &spec) {
-			in.Brains = append(in.Brains, NamedBrain{Name: u.GetName(), Spec: spec})
-		}
-	}
-	for _, u := range slackObjs {
-		var spec v1alpha1.SlackChannelSpec
-		if c.decode(u, v1alpha1.KindSlackChannel, &spec) {
-			in.SlackChannels = append(in.SlackChannels, NamedSlackChannel{Name: u.GetName(), Spec: spec})
-		}
-	}
-	for _, u := range telegramObjs {
-		var spec v1alpha1.TelegramChannelSpec
-		if c.decode(u, v1alpha1.KindTelegramChannel, &spec) {
-			in.TelegramChannels = append(in.TelegramChannels, NamedTelegramChannel{Name: u.GetName(), Spec: spec})
-		}
-	}
-	for _, u := range webObjs {
-		var spec v1alpha1.WebChannelSpec
-		if c.decode(u, v1alpha1.KindWebChannel, &spec) {
-			in.WebChannels = append(in.WebChannels, NamedWebChannel{Name: u.GetName(), Spec: spec})
-		}
-	}
-	for _, u := range bindingObjs {
-		var spec v1alpha1.ChannelBindingSpec
-		if c.decode(u, v1alpha1.KindChannelBinding, &spec) {
-			in.Bindings = append(in.Bindings, NamedBinding{Name: u.GetName(), Spec: spec})
+	for _, u := range manifestObjs {
+		var spec v1alpha1.ManifestSpec
+		if c.decode(u, v1alpha1.KindManifest, &spec) {
+			in.Manifests = append(in.Manifests, NamedManifest{Name: u.GetName(), Spec: spec})
 		}
 	}
 
 	res := Reconcile(ctx, in, c.puller, c.provider)
 
-	for _, u := range brainObjs {
-		c.writeStatus(ctx, brainGVR, u, res.BrainStatus[u.GetName()])
-	}
-	for _, u := range slackObjs {
-		c.writeStatus(ctx, slackGVR, u, res.ChannelStatus[ChannelKey(v1alpha1.KindSlackChannel, u.GetName())])
-	}
-	for _, u := range telegramObjs {
-		c.writeStatus(ctx, telegramGVR, u, res.ChannelStatus[ChannelKey(v1alpha1.KindTelegramChannel, u.GetName())])
-	}
-	for _, u := range webObjs {
-		c.writeStatus(ctx, webGVR, u, res.ChannelStatus[ChannelKey(v1alpha1.KindWebChannel, u.GetName())])
-	}
-	for _, u := range bindingObjs {
-		c.writeStatus(ctx, bindingGVR, u, res.BindingStatus[u.GetName()])
+	for _, u := range manifestObjs {
+		c.writeStatus(ctx, manifestGVR, u, res.ManifestStatus[u.GetName()])
 	}
 
 	c.logger.Info("controller reconciled",
-		"brains", len(in.Brains),
-		"channels", len(in.SlackChannels)+len(in.TelegramChannels)+len(in.WebChannels),
+		"manifests", len(in.Manifests),
+		"channels", len(res.Channels),
 		"bindings", len(res.Bindings))
 	if c.onResolved != nil {
 		c.onResolved(res)

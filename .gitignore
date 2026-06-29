@@ -9,3 +9,4 @@
 .env
 .codebase-memory/
 deploy-values.yaml
+.idea

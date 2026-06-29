@@ -1,18 +1,31 @@
-# The binding declares the capability tree and wires it to the channel.
-# Capability settings use the SettingValue ADT: { type, value/ciphertext }.
-#
-# Seal your API key:
-#   printf %s "$OPENAI_API_KEY" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
-# Then paste the output as the ciphertext below.
+# One Manifest fully describes the agent: its inlined brain, the channels it
+# serves (each carrying its own encrypted token and native subjects), and its
+# capability tree. run.sh rewrites the __PLACEHOLDERS__ below:
+#   __BRAIN_LAYOUT__       absolute path to the on-disk OCI layout (registry-less)
+#   __SEALED_TOKEN__       $TELEGRAM_BOT_TOKEN sealed with $AURORA_SECRET_KEY
+#   __TELEGRAM_USER_ID__   numeric user id allowed to talk to the bot
+#   __TELEGRAM_CHAT_ID__   chat id the bot serves
+# Capability settings use the SettingValue ADT: { type, value/ciphertext }. Set
+# your LLM key as a literal value, or use type: inPlaceEncrypted with a sealed
+# ciphertext:  printf %s "$KEY" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
 apiVersion: aurora.dev/v1alpha1
-kind: ChannelBinding
+kind: Manifest
 metadata:
   name: ops-on-telegram
 spec:
-  brainRef: kubernetes-agent
+  brain:
+    # Registry-less on-disk OCI layout. In k8s you would instead bake the layout
+    # into the image (see ../../telegram-k8s) or use a normal registry ref.
+    artifact: oci-layout:__BRAIN_LAYOUT__:latest
   channels:
     - kind: TelegramChannel
       name: ops
+      telegram:
+        botToken:
+          type: inPlaceEncrypted
+          ciphertext: __SEALED_TOKEN__
+        users: ["__TELEGRAM_USER_ID__"]   # Telegram numeric user ids allowed to talk
+        scopes: ["__TELEGRAM_CHAT_ID__"]  # Telegram chat ids the bot serves
   systemPrompt:
     type: literal
     value: >-
@@ -25,8 +38,8 @@ spec:
           type: literal
           value: "https://api.openai.com/v1"
         api_key:
-          type: inPlaceEncrypted
-          ciphertext: ""    # paste output of: printf %s "$OPENAI_API_KEY" | AURORA_SECRET_KEY=<key> aurora-k8s-agent seal-secret
+          type: literal
+          value: "your-api-key"    # or: type: inPlaceEncrypted / ciphertext: <sealed>
         default_model:
           type: literal
           value: "gpt-4.1"
@@ -49,12 +62,10 @@ spec:
       settings:
         namespaces: {type: literal, value: [default]}
     - name: k8s.apply
-      optional: true
       settings:
         namespaces: {type: literal, value: [default]}
         require_approval: {type: literal, value: true}
     - name: k8s.delete
-      optional: true
       settings:
         namespaces: {type: literal, value: [default]}
         require_approval: {type: literal, value: true}
@@ -68,16 +79,13 @@ spec:
       settings:
         namespaces: {type: literal, value: [default]}
     - name: helm.upgrade
-      optional: true
       settings:
         namespaces: {type: literal, value: [default]}
         require_approval: {type: literal, value: true}
     - name: helm.uninstall
-      optional: true
       settings:
         namespaces: {type: literal, value: [default]}
         require_approval: {type: literal, value: true}
     - name: timer.set
-      optional: true
       settings:
         max_duration_ms: {type: literal, value: 86400000}

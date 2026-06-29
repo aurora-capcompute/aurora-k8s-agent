@@ -1,14 +1,14 @@
-// Package controller resolves the Aurora control-plane resources (Brain, the
-// typed channels SlackChannel/TelegramChannel/WebChannel, and ChannelBinding)
-// into the agent's runtime configuration: which brain artifacts to load, and
-// which validated bindings to serve. Reconcile is a pure function over decoded
-// specs so it can be unit-tested without a cluster; the informer wiring that
-// feeds it lives alongside.
+// Package controller resolves the Aurora control-plane resource — the single
+// Manifest CRD — into the agent's runtime configuration: which brain artifacts
+// to load, and which validated bindings to serve. Reconcile is a pure function
+// over decoded specs so it can be unit-tested without a cluster; the informer
+// wiring that feeds it lives alongside.
 //
-// The model: a Brain artifact bundles named WASM binaries; a typed channel
-// carries the transport plus its native subjects; a ChannelBinding declares
-// the full capability tree (capabilities + children) and wires the brain to
-// one or more channels — validation happens here.
+// The model: a Manifest inlines a brain OCI artifact (which bundles named WASM
+// binaries), an embedded array of typed-ADT channels (each transport plus its
+// native subjects and credentials), and the full capability tree (capabilities
+// + children). One Manifest is validated and projected onto one binding per
+// channel it serves.
 package controller
 
 import (
@@ -27,66 +27,44 @@ import (
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/oci"
 )
 
-// Named* pair a resource's name with its decoded spec.
-type NamedBrain struct {
+// NamedManifest pairs a Manifest's name with its decoded spec.
+type NamedManifest struct {
 	Name string
-	Spec v1alpha1.BrainSpec
-}
-type NamedSlackChannel struct {
-	Name string
-	Spec v1alpha1.SlackChannelSpec
-}
-type NamedTelegramChannel struct {
-	Name string
-	Spec v1alpha1.TelegramChannelSpec
-}
-type NamedWebChannel struct {
-	Name string
-	Spec v1alpha1.WebChannelSpec
-}
-type NamedBinding struct {
-	Name string
-	Spec v1alpha1.ChannelBindingSpec
+	Spec v1alpha1.ManifestSpec
 }
 
 // Inputs is the full set of control-plane resources to resolve.
 type Inputs struct {
-	Brains           []NamedBrain
-	SlackChannels    []NamedSlackChannel
-	TelegramChannels []NamedTelegramChannel
-	WebChannels      []NamedWebChannel
-	Bindings         []NamedBinding
+	Manifests []NamedManifest
 }
 
-// SourceBinding is a validated ChannelBinding projected onto a transport source.
+// SourceBinding is a validated Manifest projected onto one transport source.
 type SourceBinding struct {
 	Source string
-	// Name is the ChannelBinding name, so a binding is addressable (e.g. by a web
-	// UI switching between the manifests bound to a channel).
+	// Name is the Manifest name, so a binding is addressable (e.g. by a web UI
+	// switching between the manifests serving a channel).
 	Name string
 	binding.Resolved
 }
 
 // Resolved is the outcome of reconciliation: the brain artifacts to load, the
-// bindings to serve, and the status to write back to each resource. Channel and
-// binding statuses are keyed by name (channels additionally namespaced by kind
-// via ChannelKey, since names can repeat across the typed channel kinds).
+// bindings to serve, the live channels, and the status to write back to each
+// Manifest (keyed by Manifest name).
 type Resolved struct {
-	BrainRefs     []string
-	Brains        []ResolvedBrain
-	Bindings      []SourceBinding
-	Channels      []ResolvedChannel
-	BrainStatus   map[string]v1alpha1.BrainStatus
-	ChannelStatus map[string]v1alpha1.ChannelStatus
-	BindingStatus map[string]v1alpha1.ChannelBindingStatus
+	BrainRefs      []string
+	Brains         []ResolvedBrain
+	Bindings       []SourceBinding
+	Channels       []ResolvedChannel
+	ManifestStatus map[string]v1alpha1.ManifestStatus
 }
 
 // ResolvedChannel groups a ready typed channel with the bindings that target it,
-// so a channel supervisor can construct one live bridge per channel CRD. Secrets
-// carries the channel's unresolved credential sources (keyed e.g. "botToken",
-// "appToken"); the supervisor holds the key and resolves them. Users carries
-// web-channel login credentials (unresolved); webchannel.Channel.Apply resolves
-// them with the same key.
+// so a channel supervisor can construct one live bridge per channel declared in a
+// Manifest. Name is the Manifest-scoped channel identity (manifestName/channelName).
+// Secrets carries the channel's unresolved credential sources (keyed e.g.
+// "botToken", "appToken"); the supervisor holds the key and resolves them. Users
+// carries web-channel login credentials (unresolved); webchannel.Channel.Apply
+// resolves them with the same key.
 type ResolvedChannel struct {
 	Kind     string
 	Name     string
@@ -96,7 +74,8 @@ type ResolvedChannel struct {
 	Bindings []binding.Resolved
 }
 
-// ChannelKey is the status-map key for a typed channel.
+// ChannelKey is the registry/running-set key for a resolved channel, namespaced
+// by kind. name is the Manifest-scoped channel identity (manifestName/channelName).
 func ChannelKey(kind, name string) string { return kind + "/" + name }
 
 type loadedBrain struct {
@@ -127,100 +106,86 @@ type resolvedChannel struct {
 	bindings []binding.Resolved
 }
 
-// Reconcile resolves inputs into runtime config and per-resource status. It never
+// Reconcile resolves inputs into runtime config and per-Manifest status. It never
 // errors: every failure is recorded as a not-ready status on the offending
-// resource, so a single bad object cannot block the rest.
+// Manifest, so a single bad object cannot block the rest.
 func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider aurora.DispatcherProvider) Resolved {
 	res := Resolved{
-		BrainStatus:   make(map[string]v1alpha1.BrainStatus, len(in.Brains)),
-		ChannelStatus: make(map[string]v1alpha1.ChannelStatus),
-		BindingStatus: make(map[string]v1alpha1.ChannelBindingStatus, len(in.Bindings)),
+		ManifestStatus: make(map[string]v1alpha1.ManifestStatus, len(in.Manifests)),
 	}
 
-	brains := make(map[string]loadedBrain, len(in.Brains))
-	for _, b := range in.Brains {
-		artifact, err := puller.Pull(ctx, b.Spec.Artifact)
-		if err != nil {
-			res.BrainStatus[b.Name] = v1alpha1.BrainStatus{Message: fmt.Sprintf("pull %s: %v", b.Spec.Artifact, err)}
-			continue
-		}
-		mainID := artifact.Digest + "/" + artifact.Main
-		brains[b.Name] = loadedBrain{brains: artifact.Brains, main: artifact.Main, digest: artifact.Digest, ref: b.Spec.Artifact}
-		res.BrainStatus[b.Name] = v1alpha1.BrainStatus{Ready: true, Digest: artifact.Digest, BrainID: mainID}
-	}
-
+	// Brain artifacts are pulled once per ref and shared across Manifests.
+	brains := make(map[string]loadedBrain)
 	channels := make(map[string]*resolvedChannel)
-	resolveChannels(in, channels, res.ChannelStatus)
-
 	refs := make(map[string]struct{})
-	for _, bnd := range in.Bindings {
-		brain, ok := brains[bnd.Spec.BrainRef]
+
+	for _, m := range in.Manifests {
+		ref := m.Spec.Brain.Artifact
+		brain, ok := brains[ref]
 		if !ok {
-			res.BindingStatus[bnd.Name] = bindingNotReady("brain %q is not ready", bnd.Spec.BrainRef)
-			continue
+			artifact, err := puller.Pull(ctx, ref)
+			if err != nil {
+				res.ManifestStatus[m.Name] = manifestNotReady("pull %s: %v", ref, err)
+				continue
+			}
+			brain = loadedBrain{brains: artifact.Brains, main: artifact.Main, digest: artifact.Digest, ref: ref}
+			brains[ref] = brain
 		}
 
-		if err := validateChildBrains(bnd.Spec.Children, brain.brains); err != nil {
-			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
+		// Validate the inline channels before doing any other work, so a bad
+		// channel fails the whole Manifest with a clear message.
+		if len(m.Spec.Channels) == 0 {
+			res.ManifestStatus[m.Name] = manifestNotReady("no channels configured")
 			continue
 		}
-
-		if err := validateAllCapabilitySettings(bnd.Spec.Capabilities, bnd.Spec.Children); err != nil {
-			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
-			continue
-		}
-
-		systemPrompt, err := resolveSystemPrompt(bnd.Spec.SystemPrompt)
+		resolvedChans, err := resolveManifestChannels(m.Name, m.Spec.Channels)
 		if err != nil {
-			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
+			res.ManifestStatus[m.Name] = manifestNotReady("%v", err)
+			continue
+		}
+
+		if err := validateChildBrains(m.Spec.Children, brain.brains); err != nil {
+			res.ManifestStatus[m.Name] = manifestNotReady("%v", err)
+			continue
+		}
+
+		if err := validateAllCapabilitySettings(m.Spec.Capabilities, m.Spec.Children); err != nil {
+			res.ManifestStatus[m.Name] = manifestNotReady("%v", err)
+			continue
+		}
+
+		systemPrompt, err := resolveSystemPrompt(m.Spec.SystemPrompt)
+		if err != nil {
+			res.ManifestStatus[m.Name] = manifestNotReady("%v", err)
 			continue
 		}
 
 		rootBrainID := brain.digest + "/" + brain.main
-		manifest, err := assembly.BuildManifest(rootBrainID, systemPrompt, bnd.Name, brain.digest,
-			bnd.Spec.Capabilities, bnd.Spec.Children, provider)
+		manifest, err := assembly.BuildManifest(rootBrainID, systemPrompt, m.Name, brain.digest,
+			m.Spec.Capabilities, m.Spec.Children, provider)
 		if err != nil {
-			res.BindingStatus[bnd.Name] = bindingNotReady("%v", err)
+			res.ManifestStatus[m.Name] = manifestNotReady("%v", err)
 			continue
 		}
 
-		// Resolve all channels before committing any SourceBindings.
-		if len(bnd.Spec.Channels) == 0 {
-			res.BindingStatus[bnd.Name] = bindingNotReady("no channels configured")
-			continue
-		}
-		var resolvedChans []*resolvedChannel
-		failed := false
-		for _, cref := range bnd.Spec.Channels {
-			ch, chOK := channels[ChannelKey(cref.Kind, cref.Name)]
-			if !chOK {
-				res.BindingStatus[bnd.Name] = bindingNotReady("channel %s/%s is not ready", cref.Kind, cref.Name)
-				failed = true
-				break
-			}
-			resolvedChans = append(resolvedChans, ch)
-		}
-		if failed {
-			continue
-		}
-
-		capSettings := collectCapabilitySettings(bnd.Spec.Capabilities)
+		capSettings := collectCapabilitySettings(m.Spec.Capabilities)
 		md := digest(manifest)
 
 		for _, ch := range resolvedChans {
+			channels[ChannelKey(ch.kind, ch.name)] = ch
 			resolved := binding.Resolved{
 				Users:              append([]string(nil), ch.users...),
 				Scopes:             append([]string(nil), ch.scopes...),
 				Manifest:           manifest,
 				Digest:             md,
 				CapabilitySettings: capSettings,
-				BindingRef:         bnd.Name,
+				BindingRef:         m.Name,
 			}
-			res.Bindings = append(res.Bindings, SourceBinding{Source: ch.source, Name: bnd.Name, Resolved: resolved})
+			res.Bindings = append(res.Bindings, SourceBinding{Source: ch.source, Name: m.Name, Resolved: resolved})
 			ch.bindings = append(ch.bindings, resolved)
 		}
 		refs[brain.ref] = struct{}{}
-		res.BindingStatus[bnd.Name] = v1alpha1.ChannelBindingStatus{Ready: true}
+		res.ManifestStatus[m.Name] = v1alpha1.ManifestStatus{Ready: true, Digest: md, BrainID: rootBrainID}
 	}
 
 	res.Channels = collectChannels(channels)
@@ -272,75 +237,101 @@ func collectChannels(channels map[string]*resolvedChannel) []ResolvedChannel {
 	return out
 }
 
-// resolveChannels validates each typed channel and records it in the registry
-// (keyed by ChannelKey) and its status. Slack/Telegram require credentials and
-// non-empty subjects; Web carries no secret and may omit subjects.
-func resolveChannels(in Inputs, out map[string]*resolvedChannel, status map[string]v1alpha1.ChannelStatus) {
-	for _, c := range in.SlackChannels {
-		key := ChannelKey(v1alpha1.KindSlackChannel, c.Name)
-		if err := validateSecret("appToken", c.Spec.AppToken); err != nil {
-			status[key] = v1alpha1.ChannelStatus{Message: err.Error()}
-			continue
+// resolveManifestChannels validates a Manifest's inline channels and returns them
+// normalised to transport sources. Channel identity is scoped by the Manifest
+// name (manifestName/channelName) so channels with the same name in different
+// Manifests do not collide on the supervisor's running set or sqlite filenames.
+// A duplicate or invalid channel fails the whole Manifest.
+func resolveManifestChannels(manifestName string, chans []v1alpha1.Channel) ([]*resolvedChannel, error) {
+	out := make([]*resolvedChannel, 0, len(chans))
+	seen := make(map[string]bool, len(chans))
+	for i, c := range chans {
+		if c.Name == "" {
+			return nil, fmt.Errorf("channel %d: name is required", i)
 		}
-		if err := validateSecret("botToken", c.Spec.BotToken); err != nil {
-			status[key] = v1alpha1.ChannelStatus{Message: err.Error()}
-			continue
+		// Names are scoped by kind, so the same name may be reused across kinds
+		// (e.g. a TelegramChannel and a WebChannel both named "ops").
+		key := c.Kind + "/" + c.Name
+		if seen[key] {
+			return nil, fmt.Errorf("channel %q: duplicate %s name", c.Name, c.Kind)
 		}
-		if err := validateSubjects(c.Spec.Users, c.Spec.Scopes); err != nil {
-			status[key] = v1alpha1.ChannelStatus{Message: err.Error()}
-			continue
+		seen[key] = true
+		rc, err := resolveChannel(manifestName+"/"+c.Name, c)
+		if err != nil {
+			return nil, err
 		}
-		out[key] = &resolvedChannel{
-			kind: v1alpha1.KindSlackChannel, name: c.Name, source: "slack",
-			users: c.Spec.Users, scopes: c.Spec.Scopes,
-			secrets: map[string]v1alpha1.SecretSource{"appToken": c.Spec.AppToken, "botToken": c.Spec.BotToken},
-		}
-		status[key] = v1alpha1.ChannelStatus{Ready: true}
+		out = append(out, rc)
 	}
-	for _, c := range in.TelegramChannels {
-		key := ChannelKey(v1alpha1.KindTelegramChannel, c.Name)
-		if err := validateSecret("botToken", c.Spec.BotToken); err != nil {
-			status[key] = v1alpha1.ChannelStatus{Message: err.Error()}
-			continue
+	return out, nil
+}
+
+// resolveChannel validates one typed-ADT channel and normalises it to a transport
+// source plus its subjects and credential sources. Slack/Telegram require
+// credentials and non-empty subjects; Web carries an optional token and may omit
+// subjects. name is the Manifest-scoped channel identity.
+func resolveChannel(name string, c v1alpha1.Channel) (*resolvedChannel, error) {
+	switch c.Kind {
+	case v1alpha1.KindSlackChannel:
+		s := c.Slack
+		if s == nil {
+			return nil, fmt.Errorf("channel %q: slack payload is required for kind SlackChannel", c.Name)
 		}
-		if err := validateSubjects(c.Spec.Users, c.Spec.Scopes); err != nil {
-			status[key] = v1alpha1.ChannelStatus{Message: err.Error()}
-			continue
+		if err := validateSecret("appToken", s.AppToken); err != nil {
+			return nil, fmt.Errorf("channel %q: %w", c.Name, err)
 		}
-		out[key] = &resolvedChannel{
-			kind: v1alpha1.KindTelegramChannel, name: c.Name, source: "telegram",
-			users: c.Spec.Users, scopes: c.Spec.Scopes,
-			secrets: map[string]v1alpha1.SecretSource{"botToken": c.Spec.BotToken},
+		if err := validateSecret("botToken", s.BotToken); err != nil {
+			return nil, fmt.Errorf("channel %q: %w", c.Name, err)
 		}
-		status[key] = v1alpha1.ChannelStatus{Ready: true}
-	}
-	for _, c := range in.WebChannels {
-		key := ChannelKey(v1alpha1.KindWebChannel, c.Name)
+		if err := validateSubjects(s.Users, s.Scopes); err != nil {
+			return nil, fmt.Errorf("channel %q: %w", c.Name, err)
+		}
+		return &resolvedChannel{
+			kind: v1alpha1.KindSlackChannel, name: name, source: "slack",
+			users: s.Users, scopes: s.Scopes,
+			secrets: map[string]v1alpha1.SecretSource{"appToken": s.AppToken, "botToken": s.BotToken},
+		}, nil
+	case v1alpha1.KindTelegramChannel:
+		t := c.Telegram
+		if t == nil {
+			return nil, fmt.Errorf("channel %q: telegram payload is required for kind TelegramChannel", c.Name)
+		}
+		if err := validateSecret("botToken", t.BotToken); err != nil {
+			return nil, fmt.Errorf("channel %q: %w", c.Name, err)
+		}
+		if err := validateSubjects(t.Users, t.Scopes); err != nil {
+			return nil, fmt.Errorf("channel %q: %w", c.Name, err)
+		}
+		return &resolvedChannel{
+			kind: v1alpha1.KindTelegramChannel, name: name, source: "telegram",
+			users: t.Users, scopes: t.Scopes,
+			secrets: map[string]v1alpha1.SecretSource{"botToken": t.BotToken},
+		}, nil
+	case v1alpha1.KindWebChannel:
+		w := c.Web
+		if w == nil {
+			w = &v1alpha1.WebChannelSpec{}
+		}
 		var chSecrets map[string]v1alpha1.SecretSource
-		if c.Spec.Token != nil {
-			if err := validateSecret("token", *c.Spec.Token); err != nil {
-				status[key] = v1alpha1.ChannelStatus{Message: fmt.Sprintf("invalid token: %v", err)}
-				continue
+		if w.Token != nil {
+			if err := validateSecret("token", *w.Token); err != nil {
+				return nil, fmt.Errorf("channel %q: invalid token: %w", c.Name, err)
 			}
-			chSecrets = map[string]v1alpha1.SecretSource{"token": *c.Spec.Token}
+			chSecrets = map[string]v1alpha1.SecretSource{"token": *w.Token}
 		}
-		failed := false
-		for i, u := range c.Spec.Users {
+		for i, u := range w.Users {
 			if err := validateSecret(fmt.Sprintf("users[%d].password", i), u.Password); err != nil {
-				status[key] = v1alpha1.ChannelStatus{Message: err.Error()}
-				failed = true
-				break
+				return nil, fmt.Errorf("channel %q: %w", c.Name, err)
 			}
 		}
-		if failed {
-			continue
-		}
-		out[key] = &resolvedChannel{
-			kind: v1alpha1.KindWebChannel, name: c.Name, source: "web",
-			webUsers: c.Spec.Users, scopes: c.Spec.Scopes,
+		return &resolvedChannel{
+			kind: v1alpha1.KindWebChannel, name: name, source: "web",
+			webUsers: w.Users, scopes: w.Scopes,
 			secrets: chSecrets,
-		}
-		status[key] = v1alpha1.ChannelStatus{Ready: true}
+		}, nil
+	case "":
+		return nil, fmt.Errorf("channel %q: kind is required", c.Name)
+	default:
+		return nil, fmt.Errorf("channel %q: unknown kind %q", c.Name, c.Kind)
 	}
 }
 
@@ -457,8 +448,8 @@ func validateSubjects(users, scopes []string) error {
 // that produced them.
 func Digest(m aurora.Manifest) string { return digest(m) }
 
-func bindingNotReady(format string, args ...any) v1alpha1.ChannelBindingStatus {
-	return v1alpha1.ChannelBindingStatus{Message: fmt.Sprintf(format, args...)}
+func manifestNotReady(format string, args ...any) v1alpha1.ManifestStatus {
+	return v1alpha1.ManifestStatus{Message: fmt.Sprintf(format, args...)}
 }
 
 func digest(m aurora.Manifest) string {

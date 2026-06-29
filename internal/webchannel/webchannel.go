@@ -1,8 +1,8 @@
 // Package webchannel is the in-process "web" communication channel. It tracks the
-// manifests (FunctionInstances) bound to web Channels via the control plane so a
-// UI can switch between them, and maps a thread back to the manifest that created
-// it (by content digest) so all data can be grouped per manifest — without any
-// extra persistence, since a thread already carries its manifest.
+// manifests bound to web channels via the control plane so a UI can switch between
+// them, and maps a thread back to the manifest that created it (by content digest)
+// so all data can be grouped per manifest — without any extra persistence, since a
+// thread already carries its manifest.
 package webchannel
 
 import (
@@ -38,8 +38,8 @@ type resolvedUser struct {
 	password []byte
 }
 
-// channelAuth holds the resolved bearer token and login credentials for one
-// WebChannel CRD. Multiple ChannelBindings can reference the same channel;
+// channelAuth holds the resolved bearer token and login credentials for one web
+// channel declared in a Manifest. Multiple bindings can target the same channel;
 // they all share its token and user list.
 type channelAuth struct {
 	token []byte
@@ -50,9 +50,9 @@ type channelAuth struct {
 // reconciliation.
 type Channel struct {
 	mu       sync.RWMutex
-	byName   map[string]entry      // binding name → manifest + token
-	byDigest map[string]string     // manifest digest → binding name
-	channels map[string]channelAuth // channel CRD name → token + users
+	byName   map[string]entry       // binding name → manifest + token
+	byDigest map[string]string      // manifest digest → binding name
+	channels map[string]channelAuth // scoped channel name → token + users
 }
 
 // New returns an empty web channel registry.

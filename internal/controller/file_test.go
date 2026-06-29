@@ -15,34 +15,27 @@ func quietLogger() *slog.Logger {
 func TestReadManifestsAndBuildInputs(t *testing.T) {
 	dir := t.TempDir()
 
-	// A multi-document file with a Brain and a TelegramChannel.
-	multi := `
+	// A YAML Manifest with an inlined brain and a Telegram channel.
+	doc := `
 apiVersion: aurora.dev/v1alpha1
-kind: Brain
+kind: Manifest
 metadata:
-  name: k8s-brain
+  name: ops
 spec:
-  artifact: ghcr.io/acme/brain-k8s:1.4
----
-apiVersion: aurora.dev/v1alpha1
-kind: TelegramChannel
-metadata:
-  name: tg
-spec:
-  botToken: { type: inPlaceEncrypted, ciphertext: AAAA }
-  users: ["U1"]
-  scopes: ["C1"]
+  brain:
+    artifact: ghcr.io/acme/brain-k8s:1.4
+  channels:
+    - kind: TelegramChannel
+      name: tg
+      telegram:
+        botToken: { type: inPlaceEncrypted, ciphertext: AAAA }
+        users: ["U1"]
+        scopes: ["C1"]
+  capabilities:
+    - name: k8s.get
 `
-	if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte(multi), 0o600); err != nil {
-		t.Fatalf("write multi: %v", err)
-	}
-
-	// A JSON ChannelBinding in its own file.
-	bnd := `{"apiVersion":"aurora.dev/v1alpha1","kind":"ChannelBinding","metadata":{"name":"ops"},` +
-		`"spec":{"brainRef":"k8s-brain","channels":[{"kind":"TelegramChannel","name":"tg"}],` +
-		`"capabilities":[{"name":"k8s.get"}]}}`
-	if err := os.WriteFile(filepath.Join(dir, "b.json"), []byte(bnd), 0o600); err != nil {
-		t.Fatalf("write binding: %v", err)
+	if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte(doc), 0o600); err != nil {
+		t.Fatalf("write manifest: %v", err)
 	}
 
 	// A non-manifest file that must be ignored.
@@ -54,24 +47,25 @@ spec:
 	if err != nil {
 		t.Fatalf("readManifests: %v", err)
 	}
-	if len(objs) != 3 {
-		t.Fatalf("objects = %d, want 3 (Brain, TelegramChannel, ChannelBinding)", len(objs))
+	if len(objs) != 1 {
+		t.Fatalf("objects = %d, want 1 (Manifest)", len(objs))
 	}
 
 	in := inputsFromObjects(objs, quietLogger())
-	if len(in.Brains) != 1 || in.Brains[0].Name != "k8s-brain" || in.Brains[0].Spec.Artifact != "ghcr.io/acme/brain-k8s:1.4" {
-		t.Fatalf("brains = %+v", in.Brains)
+	if len(in.Manifests) != 1 {
+		t.Fatalf("manifests = %+v", in.Manifests)
 	}
-	if len(in.TelegramChannels) != 1 || in.TelegramChannels[0].Name != "tg" ||
-		in.TelegramChannels[0].Spec.BotToken.Type != "inPlaceEncrypted" {
-		t.Fatalf("telegram channels = %+v", in.TelegramChannels)
+	m := in.Manifests[0]
+	if m.Name != "ops" || m.Spec.Brain.Artifact != "ghcr.io/acme/brain-k8s:1.4" {
+		t.Fatalf("manifest = %+v", m)
 	}
-	if len(in.Bindings) != 1 || in.Bindings[0].Name != "ops" || in.Bindings[0].Spec.BrainRef != "k8s-brain" ||
-		in.Bindings[0].Spec.Channels[0].Name != "tg" || in.Bindings[0].Spec.Channels[0].Kind != "TelegramChannel" {
-		t.Fatalf("bindings = %+v", in.Bindings)
+	if len(m.Spec.Channels) != 1 || m.Spec.Channels[0].Kind != "TelegramChannel" ||
+		m.Spec.Channels[0].Name != "tg" || m.Spec.Channels[0].Telegram == nil ||
+		m.Spec.Channels[0].Telegram.BotToken.Type != "inPlaceEncrypted" {
+		t.Fatalf("channels = %+v", m.Spec.Channels)
 	}
-	if len(in.Bindings[0].Spec.Capabilities) != 1 || in.Bindings[0].Spec.Capabilities[0].Name != "k8s.get" {
-		t.Fatalf("binding capabilities = %+v", in.Bindings[0].Spec.Capabilities)
+	if len(m.Spec.Capabilities) != 1 || m.Spec.Capabilities[0].Name != "k8s.get" {
+		t.Fatalf("manifest capabilities = %+v", m.Spec.Capabilities)
 	}
 }
 
@@ -99,7 +93,7 @@ data:
 		t.Fatalf("readManifests: %v", err)
 	}
 	in := inputsFromObjects(objs, quietLogger())
-	if len(in.Brains)+len(in.SlackChannels)+len(in.TelegramChannels)+len(in.WebChannels)+len(in.Bindings) != 0 {
+	if len(in.Manifests) != 0 {
 		t.Fatalf("unknown kind should produce no inputs, got %+v", in)
 	}
 }

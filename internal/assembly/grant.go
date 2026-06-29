@@ -8,11 +8,11 @@ import (
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
 )
 
-// BuildManifest constructs an aurora.Manifest from the ChannelBinding's
+// BuildManifest constructs an aurora.Manifest from the Manifest CRD's
 // capability and delegation tree. provider.Normalize is called for each
-// capability to fill defaults and validate settings; optional capabilities
-// whose Normalize returns an error are silently skipped, required ones fail
-// the manifest. Children are wired to the same artifact via artifactDigest.
+// capability to fill defaults and validate settings; a capability whose
+// Normalize returns an error fails the manifest. Children are wired to the
+// same artifact via artifactDigest.
 func BuildManifest(
 	brainID, systemPrompt, bindingName, artifactDigest string,
 	caps []v1alpha1.Capability,
@@ -70,19 +70,16 @@ type cognitionChecker interface {
 	IsCognition(name string) bool
 }
 
-// nodeCaps resolves one node's capabilities via provider.Normalize. Optional
-// capabilities that Normalize rejects are skipped; required ones fail.
-// Cognition capabilities (e.g. openai.chat) are marked Hidden so that
-// visibleCapabilities excludes them from the brain's operational tool list.
+// nodeCaps resolves one node's capabilities via provider.Normalize. A capability
+// that Normalize rejects fails the node. Cognition capabilities (e.g. openai.chat)
+// are marked Hidden so that visibleCapabilities excludes them from the brain's
+// operational tool list.
 func nodeCaps(caps []v1alpha1.Capability, provider aurora.DispatcherProvider) ([]aurora.CapabilityConfig, error) {
 	var out []aurora.CapabilityConfig
 	for _, c := range caps {
 		settings := v1alpha1.ResolveLiterals(c.Settings)
 		normalized, err := provider.Normalize(c.Name, settings)
 		if err != nil {
-			if c.Optional {
-				continue
-			}
 			return nil, fmt.Errorf("capability %q: %w", c.Name, err)
 		}
 		hidden := false

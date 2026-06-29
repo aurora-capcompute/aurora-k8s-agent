@@ -1,8 +1,8 @@
 // Package brainspec describes the OCI config blob carried inside a brain artifact.
 // The config is intentionally minimal: it declares which WASM binaries are bundled
 // and which one is the entry-point. Capability declarations, children, and system
-// prompts all live in the ChannelBinding CRD — not in the OCI artifact — so
-// changing the delegation tree never requires a repack.
+// prompts all live in the Manifest CRD — not in the OCI artifact — so changing the
+// delegation tree never requires a repack.
 package brainspec
 
 import (
@@ -21,7 +21,7 @@ var ErrIncompatibleABI = errors.New("incompatible brain ABI")
 
 // Manifest is the brain's OCI config blob. It names which WASM binaries are
 // bundled in the artifact and which one is the entry-point. Capability
-// declarations and children are operator-supplied via the ChannelBinding CRD.
+// declarations and children are operator-supplied via the Manifest CRD.
 type Manifest struct {
 	ABI    int      `json:"abi"`
 	Main   string   `json:"main"`

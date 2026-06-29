@@ -131,10 +131,10 @@ func run() error {
 
 	var sources []source.Source
 
-	// The control plane owns all chat channels via typed CRDs. The supervisor
-	// builds one live bridge per channel CRD, resolving tokens from each
-	// channel's SecretSource. onResolved fans reconciliation out to the web
-	// channel registry and the supervisor.
+	// The control plane owns all chat channels via the Manifest CRD. The
+	// supervisor builds one live bridge per channel declared in a Manifest,
+	// resolving tokens from each channel's SecretSource. onResolved fans
+	// reconciliation out to the web channel registry and the supervisor.
 	var (
 		supervisor  *channelsup.Supervisor
 		webResolver secrets.Resolver
@@ -142,7 +142,7 @@ func run() error {
 	onResolved := func(res controller.Resolved) {
 		logger.Info("control plane resolved",
 			"brains", len(res.Brains), "bindings", len(res.Bindings), "channels", len(res.Channels))
-		// Hot-load the brains declared by Brain CRDs into the running runtime, so
+		// Hot-load the brains declared by Manifests into the running runtime, so
 		// the agent boots with none and gains them as resources appear.
 		brainSources := make([]aurora.BrainSource, len(res.Brains))
 		for i, b := range res.Brains {

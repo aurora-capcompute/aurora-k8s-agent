@@ -23,10 +23,10 @@ import (
 )
 
 // FileSource is a control plane backed by the filesystem instead of the
-// Kubernetes API. It reads Brain/Channel/FunctionInstance manifests from a
-// directory and runs the same Reconcile as the in-cluster controller, re-scanning
-// on an interval. It lets the agent run without a cluster (the "fs" control
-// plane), pointing directly at resource files on disk.
+// Kubernetes API. It reads Manifest resources from a directory and runs the same
+// Reconcile as the in-cluster controller, re-scanning on an interval. It lets the
+// agent run without a cluster (the "fs" control plane), pointing directly at
+// resource files on disk.
 type FileSource struct {
 	dir        string
 	resync     time.Duration
@@ -126,14 +126,14 @@ func (f *FileSource) reconcile(ctx context.Context) {
 	}
 	in := inputsFromObjects(objs, f.logger)
 	res := Reconcile(ctx, in, f.puller, f.provider)
-	for name, status := range res.BindingStatus {
+	for name, status := range res.ManifestStatus {
 		if !status.Ready {
-			f.logger.Warn("fs control plane: binding not ready", "binding", name, "reason", status.Message)
+			f.logger.Warn("fs control plane: manifest not ready", "manifest", name, "reason", status.Message)
 		}
 	}
 	f.logger.Info("fs control plane reconciled",
-		"dir", f.dir, "brains", len(in.Brains),
-		"channels", len(in.SlackChannels)+len(in.TelegramChannels)+len(in.WebChannels),
+		"dir", f.dir, "manifests", len(in.Manifests),
+		"channels", len(res.Channels),
 		"bindings", len(res.Bindings))
 	if f.onResolved != nil {
 		f.onResolved(res)
@@ -146,30 +146,10 @@ func inputsFromObjects(objs []*unstructured.Unstructured, logger *slog.Logger) I
 	var in Inputs
 	for _, u := range objs {
 		switch u.GetKind() {
-		case v1alpha1.KindBrain:
-			var spec v1alpha1.BrainSpec
-			if decodeFsSpec(u, v1alpha1.KindBrain, &spec, logger) {
-				in.Brains = append(in.Brains, NamedBrain{Name: u.GetName(), Spec: spec})
-			}
-		case v1alpha1.KindSlackChannel:
-			var spec v1alpha1.SlackChannelSpec
-			if decodeFsSpec(u, v1alpha1.KindSlackChannel, &spec, logger) {
-				in.SlackChannels = append(in.SlackChannels, NamedSlackChannel{Name: u.GetName(), Spec: spec})
-			}
-		case v1alpha1.KindTelegramChannel:
-			var spec v1alpha1.TelegramChannelSpec
-			if decodeFsSpec(u, v1alpha1.KindTelegramChannel, &spec, logger) {
-				in.TelegramChannels = append(in.TelegramChannels, NamedTelegramChannel{Name: u.GetName(), Spec: spec})
-			}
-		case v1alpha1.KindWebChannel:
-			var spec v1alpha1.WebChannelSpec
-			if decodeFsSpec(u, v1alpha1.KindWebChannel, &spec, logger) {
-				in.WebChannels = append(in.WebChannels, NamedWebChannel{Name: u.GetName(), Spec: spec})
-			}
-		case v1alpha1.KindChannelBinding:
-			var spec v1alpha1.ChannelBindingSpec
-			if decodeFsSpec(u, v1alpha1.KindChannelBinding, &spec, logger) {
-				in.Bindings = append(in.Bindings, NamedBinding{Name: u.GetName(), Spec: spec})
+		case v1alpha1.KindManifest:
+			var spec v1alpha1.ManifestSpec
+			if decodeFsSpec(u, v1alpha1.KindManifest, &spec, logger) {
+				in.Manifests = append(in.Manifests, NamedManifest{Name: u.GetName(), Spec: spec})
 			}
 		case "":
 			// Empty document; skip.

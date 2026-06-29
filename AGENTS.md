@@ -3,7 +3,8 @@
 Aurora Kubernetes agent — a chat-controlled (Telegram and Slack), in-cluster AI
 agent for Kubernetes and Helm operations. Runs are driven by a caller-supplied
 Wasm brain on the event-sourced `aurora-capcompute` runtime; the brain itself is
-decoupled, loaded at runtime from a Brain CRD or an OCI artifact, not embedded.
+decoupled, loaded at runtime from a Manifest's inlined brain reference (an OCI
+artifact), not embedded.
 
 ## Build and test
 
@@ -24,13 +25,13 @@ Dependencies are resolved via the `go.work` workspace at the repository root.
 cmd/aurora-k8s-agent/        entry point; config, source wiring, brain-pack/seal subcommands
 internal/assembly/           brain provider (OCI + empty), dispatcher provider, Secret guard
 internal/oci/                pull brain artifacts (wasm + declaration) from OCI registries
-internal/brainspec/          brain manifest: declared capabilities (per-cap optional flag)
-internal/apis/               v1alpha1 control-plane types (Brain, the typed
-                             Slack/Telegram/Web channels, ChannelBinding)
+internal/brainspec/          brain manifest: ABI, bundled brains, and entry-point
+internal/apis/               v1alpha1 control-plane types (the single Manifest CRD:
+                             inlined brain + typed-ADT channels + capability tree)
 internal/controller/         CRD informer + fs source; reconcile (pull brains, validate, bind)
 internal/binding/            named-manifest bindings (source × subject × scope)
 internal/source/             Source interface + concurrent multi-source runner
-internal/channelsup/         supervises live bridges, one per channel CRD
+internal/channelsup/         supervises live bridges, one per channel in a Manifest
 internal/chat/               transport-agnostic chat core (subscriptions, timers, policy)
 internal/chat/telegram/      Telegram adapter; subpackages state (SQLite) + policy
 internal/chat/slack/         Slack adapter; subpackages state (SQLite) + policy

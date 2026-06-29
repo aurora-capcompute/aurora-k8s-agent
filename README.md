@@ -156,7 +156,7 @@ policy:
           - name: openai.chat
             settings:
               base_url: https://api.openai.com/v1
-              api_key: ""   # use ChannelBinding SettingValue ADT for secrets
+              api_key: ""   # use the Manifest SettingValue ADT for secrets
               default_model: gpt-5.5
               allowed_models: [gpt-5.5]
               require_approval: false
@@ -183,7 +183,7 @@ policy:
 
 The reasoning **brain** (a wasm module) is decoupled from the binary — it is never
 embedded at build time. Brains are loaded at runtime, either from OCI registries
-named at startup or from Brain CRDs supplied by the control plane. Set
+named at startup or from Manifests supplied by the control plane. Set
 `AURORA_BRAINS` to a comma-separated list of references to load them up front:
 
 ```sh
@@ -198,38 +198,49 @@ brain is a separate layer annotated with `aurora.brain.name`
 (`application/vnd.aurora.brain.wasm.v1+wasm`). Pack an artifact with
 `aurora-k8s-agent pack-brain --brain name:brain.wasm --out ./layout`.
 With `AURORA_BRAINS` unset, the agent boots with no brain and gains them at
-runtime from Brain CRDs, which the control plane hot-loads via
+runtime from Manifests, which the control plane hot-loads via
 `runtime.SetBrains`. Brain bytes are pinned by digest.
 
-### Control plane (CRDs)
+### Control plane (the Manifest CRD)
 
 With `controller.enabled=true` the agent also runs an in-cluster controller that
-watches three namespaced CRDs and reconciles them into its configuration:
+watches a single namespaced CRD — **`Manifest`** — and reconciles each one into
+its configuration. One Manifest fully describes one agent:
 
-- **`Brain`** — an OCI brain artifact (`spec.artifact`). Status reports the
-  resolved digest and the brain's declared capabilities.
-- **`FunctionInstance`** — the deployable "manifest": a `brainRef`, the granted
-  `capabilities` (validated as a subset of the brain's declaration), `subjects`,
-  and a `channelRef`.
-- **`Channel`** — a transport (`telegram`/`slack`) and its `secretRef`.
+- **`spec.brain`** — the OCI brain artifact (`artifact`, optional `pullSecretRef`),
+  inlined. The artifact bundles the root brain plus any child brains.
+- **`spec.channels`** — an embedded array of typed-ADT channels. Each entry has a
+  `kind` (`SlackChannel`/`TelegramChannel`/`WebChannel`), a `name`, and the matching
+  typed payload (`slack`/`telegram`/`web`) carrying its credentials and subjects.
+- **`spec.capabilities`** / **`spec.children`** — the capability tree and the brain
+  delegation tree.
+- **`spec.systemPrompt`** — a `SettingValue` (literal) prompt.
 
 ```yaml
 apiVersion: aurora.dev/v1alpha1
-kind: FunctionInstance
+kind: Manifest
 metadata: {name: ops-on-telegram}
 spec:
-  brainRef: brain-k8s          # -> a Brain
-  channelRef: team-telegram    # -> a Channel
+  brain:
+    artifact: ghcr.io/acme/brain-k8s:1.4
+  channels:
+    - kind: TelegramChannel
+      name: ops
+      telegram:
+        botToken: {type: inPlaceEncrypted, ciphertext: <sealed>}
+        users: ["42"]
+        scopes: ["-100123"]
   capabilities:
-    - {name: k8s.get, settings: {namespaces: [default]}}
-  subjects: {users: ["42"], scopes: ["-100123"]}
+    - {name: k8s.get, settings: {namespaces: {type: literal, value: [default]}}}
 ```
 
-The controller writes `.status.ready` (and a message) on each resource. A grant
-that exceeds the brain's declared capabilities is rejected with a status message
-and produces no binding. The controller needs `rbac.create` (it adds a ClusterRole
-to watch the CRDs). Live application of changes to running channels is staged
-follow-up work; brain-set changes are applied on (re)start.
+The controller writes `.status.ready` (and a message) on each Manifest, plus its
+resolved brain id and manifest digest. An invalid channel, an unbundled child
+brain, or a bad capability setting fails that Manifest with a status message and
+produces no binding, while sibling Manifests still resolve. The controller needs
+`rbac.create` (it adds a ClusterRole to watch the CRD). The channel supervisor
+applies channel changes live (add/hot-swap/restart); brain-set changes are applied
+on reconcile via `runtime.SetBrains`.
 
 ### Named manifests and bindings
 
@@ -368,7 +379,7 @@ does not configure a task TTL, so timers up to `max_duration_ms` are safe.
 
 `openai.chat` supports OpenAI and compatible gateways. Configure `base_url`,
 `default_model`, `allowed_models`, and `api_key` in each capability's settings.
-With ChannelBinding CRDs (the default path), set `api_key` as a `SettingValue`
+With the Manifest CRD (the default path), set `api_key` as a `SettingValue`
 with `type: inPlaceEncrypted` — the key is resolved at channel start and never
 persisted in a manifest or thread summary.
 

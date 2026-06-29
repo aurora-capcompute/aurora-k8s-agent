@@ -12,19 +12,20 @@ registry:
   username: ""
   passwordKey: registry-password
 
-# Control-plane controller: watch Brain, the typed channels (SlackChannel,
-# TelegramChannel, WebChannel) and ChannelBinding CRDs and reconcile them into
-# runtime config. When enabled the controller owns the chat channels — a
-# supervisor builds one live bridge per channel CRD, decrypting each channel's
-# inPlaceEncrypted token with `secret-key` from the Secret (see secretName).
-# Installs the CRDs and grants RBAC to watch them. Requires rbac.create.
+# Control-plane controller: watch the Manifest CRD and reconcile each one into
+# runtime config. A Manifest inlines its brain, an array of typed channels
+# (SlackChannel/TelegramChannel/WebChannel), and its capability tree. When enabled
+# the controller owns the chat channels — a supervisor builds one live bridge per
+# channel declared in a Manifest, decrypting each channel's inPlaceEncrypted token
+# with `secret-key` from the Secret (see secretName). Installs the CRD and grants
+# RBAC to watch it. Requires rbac.create.
 controller:
   enabled: true
   namespace: ""         # watch scope; empty = all namespaces
 
 # Communication channels for the legacy NO-control-plane path only
 # (controller.enabled=false). With controller.enabled=true (the default) this is
-# ignored: channels come from typed channel CRDs and the supervisor instead.
+# ignored: channels come from the Manifest CRD and the supervisor instead.
 # One or more of: telegram, slack. Set to [] for headless (API/UI-only).
 # - telegram: Secret must contain `telegram-bot-token`.
 # - slack: Secret must contain `slack-app-token` and `slack-bot-token`.

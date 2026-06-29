@@ -1,8 +1,9 @@
 // Package channelsup supervises live chat bridges driven by the control plane:
-// one Slack/Telegram client per typed channel CRD, with tokens resolved from the
-// channel's SecretSource and routing derived from the bindings that target it. It
-// is a single source.Source; as the control plane re-reconciles it adds, hot-swaps
-// (routing only), or stops bridges so channel CRDs behave like live instances.
+// one Slack/Telegram client per channel declared in a Manifest, with tokens
+// resolved from the channel's SecretSource and routing derived from the bindings
+// that target it. It is a single source.Source; as the control plane re-reconciles
+// it adds, hot-swaps (routing only), or stops bridges so the Manifests' channels
+// behave like live instances.
 package channelsup
 
 import (
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/aurora-capcompute/aurora-capcompute/aurora"
@@ -221,7 +223,7 @@ func (s *Supervisor) startTelegram(ch controller.ResolvedChannel, tokens map[str
 	if err != nil {
 		return nil, err
 	}
-	store, err := tgstate.Open(filepath.Join(s.dataDir, "telegram-"+ch.Name+".db"), s.stateKey)
+	store, err := tgstate.Open(filepath.Join(s.dataDir, "telegram-"+fileSafe(ch.Name)+".db"), s.stateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +258,7 @@ func (s *Supervisor) startSlack(ch controller.ResolvedChannel, tokens map[string
 	if err != nil {
 		return nil, err
 	}
-	store, err := slstate.Open(filepath.Join(s.dataDir, "slack-"+ch.Name+".db"), s.stateKey)
+	store, err := slstate.Open(filepath.Join(s.dataDir, "slack-"+fileSafe(ch.Name)+".db"), s.stateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -337,6 +339,10 @@ func (s *Supervisor) stopAll() {
 		s.stop(key, true)
 	}
 }
+
+// fileSafe turns a Manifest-scoped channel name (manifestName/channelName) into a
+// flat, filesystem-safe token for per-channel sqlite filenames.
+func fileSafe(name string) string { return strings.ReplaceAll(name, "/", "-") }
 
 func (s *Supervisor) parentCtx() context.Context {
 	s.mu.Lock()

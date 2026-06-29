@@ -1,8 +1,8 @@
 # Deploy the brain over Telegram on Kubernetes
 
 The agent image ships no brain. Here the example brain is baked into a derived
-image as an OCI layout and loaded by a `Brain` CRD — **no registry required** —
-while the controller hot-loads it into the running agent.
+image as an OCI layout and referenced inline by a `Manifest` CRD — **no registry
+required** — while the controller hot-loads it into the running agent.
 
 ## 1. Build a derived image with the brain baked in
 
@@ -21,7 +21,7 @@ docker push ghcr.io/you/aurora-k8s-agent-k8sbrain:latest
 
 (Alternatively, skip the bake: `oras cp --from-oci-layout
 examples/brain/dist/layout:latest ghcr.io/you/brain-k8s:1.0`, use the stock agent
-image, and set `Brain.spec.artifact: ghcr.io/you/brain-k8s:1.0`.)
+image, and set `Manifest.spec.brain.artifact: ghcr.io/you/brain-k8s:1.0`.)
 
 ## 2. Create the Secret and install the chart with the controller enabled
 
@@ -36,25 +36,23 @@ helm install aurora charts/aurora-k8s-agent -n aurora \
   --set secretName=aurora-secrets
 ```
 
-## 3. Seal secrets and apply the resources
+## 3. Seal secrets and apply the manifest
 
 ```sh
 KEY=<secret-key from the Secret>
 
-# Seal the Telegram bot token → paste into telegramchannel.yaml
+# Seal the Telegram bot token → paste into manifest.yaml spec.channels[0].telegram.botToken.ciphertext
 printf %s "$TELEGRAM_BOT_TOKEN" | AURORA_SECRET_KEY=$KEY aurora-k8s-agent seal-secret
 
-# Seal the OpenAI API key → paste into channelbinding.yaml spec.secrets.OPENAI_API_KEY.ciphertext
+# Seal the OpenAI API key → paste into manifest.yaml capabilities openai.chat api_key.ciphertext
 printf %s "$OPENAI_API_KEY" | AURORA_SECRET_KEY=$KEY aurora-k8s-agent seal-secret
 
-# Set user/chat IDs in telegramchannel.yaml, then apply:
-kubectl apply -n aurora -f examples/telegram-k8s/brain.yaml \
-  -f examples/telegram-k8s/telegramchannel.yaml \
-  -f examples/telegram-k8s/channelbinding.yaml
+# Set user/chat IDs in manifest.yaml, then apply:
+kubectl apply -n aurora -f examples/telegram-k8s/manifest.yaml
 ```
 
 The controller pulls the brain from `oci-layout:/brains/kubernetes-agent:latest`,
 registers it via `runtime.SetBrains`, and the supervisor opens the Telegram
 bridge. Both the Telegram bot token and the OpenAI API key are encrypted at rest
-in their respective CRDs and resolved at bridge startup — neither appears in
-environment variables or Kubernetes Secrets.
+in the Manifest and resolved at bridge startup — neither appears in environment
+variables or Kubernetes Secrets.

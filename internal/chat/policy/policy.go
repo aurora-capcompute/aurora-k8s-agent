@@ -151,7 +151,7 @@ func parseLegacy[ID comparable](raw []byte, cfg Config[ID], provider aurora.Disp
 
 // FromResolved builds a Set from already-resolved bindings (e.g. produced by the
 // control plane), so the same routing applies whether bindings come from a file or
-// from live channel CRDs.
+// from live Manifests.
 func FromResolved[ID comparable](cfg Config[ID], resolved []binding.Resolved) (*Set[ID], error) {
 	set := &Set[ID]{users: make(map[ID]User[ID])}
 	for _, r := range resolved {

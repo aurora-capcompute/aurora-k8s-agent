@@ -42,7 +42,7 @@ func sealSecret() error {
 // brainFlag accumulates --brain name:path flags.
 type brainFlag []string
 
-func (b *brainFlag) String() string  { return fmt.Sprint([]string(*b)) }
+func (b *brainFlag) String() string { return fmt.Sprint([]string(*b)) }
 func (b *brainFlag) Set(v string) error {
 	if !strings.Contains(v, ":") {
 		return errors.New("--brain must be name:path (e.g. kubernetes-agent:brain.wasm)")
@@ -53,7 +53,7 @@ func (b *brainFlag) Set(v string) error {
 
 // packBrain packs one or more WASM binaries into an OCI image layout so it can
 // be loaded with no registry — referenced as "oci-layout:<dir>:<tag>" from a
-// Brain CRD's artifact field. Usage:
+// Manifest's brain.artifact field. Usage:
 //
 //	aurora-k8s-agent pack-brain \
 //	  --brain kubernetes-agent:brain.wasm \

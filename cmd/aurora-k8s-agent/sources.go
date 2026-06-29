@@ -26,8 +26,7 @@ func buildFileControlPlane(cfg Config, provider aurora.DispatcherProvider, onRes
 }
 
 // buildController constructs the in-cluster control-plane controller. It watches
-// Brain, the typed channels (SlackChannel/TelegramChannel/WebChannel), and
-// ChannelBinding resources and reconciles them, writing status back.
+// Manifest resources and reconciles them, writing status back.
 // cfg.ControllerNamespace scopes the watch (empty = all namespaces).
 func buildController(cfg Config, provider aurora.DispatcherProvider, onResolved func(controller.Resolved), logger *slog.Logger) (source.Source, error) {
 	restCfg, err := rest.InClusterConfig()

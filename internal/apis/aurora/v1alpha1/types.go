@@ -1,13 +1,14 @@
-// Package v1alpha1 defines the Aurora control-plane API. The model is decomposed
-// into three roles:
+// Package v1alpha1 defines the Aurora control-plane API. One logical agent is
+// described by a single resource:
 //
-//   - Brain: an OCI brain artifact that bundles one or more named WASM binaries.
-//     It carries no capability declarations — those live in the ChannelBinding.
-//   - typed Channel CRDs (SlackChannel/TelegramChannel/WebChannel): a transport
-//     plus its channel-native user/subject abstraction and its own credentials,
-//     each credential carried as a SecretSource (a tagged union).
-//   - ChannelBinding: declares the capability tree (capabilities + delegation
-//     children), wires the brain to one or more channels, and resolves secrets.
+//   - Manifest: inlines the brain OCI artifact, an embedded array of typed-ADT
+//     channels (Slack/Telegram/Web transports, each carrying its own credentials
+//     and channel-native subjects), the capability tree (capabilities + delegation
+//     children), and the system prompt. One Manifest fully describes one agent.
+//
+// A channel is a typed ADT: the Kind field selects which payload (Slack/Telegram/
+// Web) is populated. The per-transport payload structs and the SecretSource/
+// SettingValue tagged unions are shared building blocks.
 //
 // These are plain spec/status structs decoded from unstructured objects via the
 // dynamic client; they are not registered runtime.Objects, so no deepcopy/scheme
@@ -22,34 +23,17 @@ const (
 	// Version is the API version.
 	Version = "v1alpha1"
 
-	KindBrain           = "Brain"
+	// KindManifest is the single control-plane kind.
+	KindManifest = "Manifest"
+
+	// Channel kind discriminators, used within a Manifest's channels array.
 	KindSlackChannel    = "SlackChannel"
 	KindTelegramChannel = "TelegramChannel"
 	KindWebChannel      = "WebChannel"
-	KindChannelBinding  = "ChannelBinding"
 )
 
 // ChannelKinds lists the typed channel kinds, in a stable order.
 var ChannelKinds = []string{KindSlackChannel, KindTelegramChannel, KindWebChannel}
-
-// --- Brain ---
-
-// BrainSpec references a brain OCI artifact.
-type BrainSpec struct {
-	// Artifact is the OCI reference (e.g. ghcr.io/org/brain-k8s:1.4).
-	Artifact string `json:"artifact"`
-	// PullSecretRef names a Secret (docker-config or basic auth) for the registry.
-	PullSecretRef string `json:"pullSecretRef,omitempty"`
-}
-
-// BrainStatus reports the resolved brain.
-type BrainStatus struct {
-	Digest       string   `json:"digest,omitempty"`
-	BrainID      string   `json:"brainID,omitempty"`
-	Capabilities []string `json:"capabilities,omitempty"`
-	Ready        bool     `json:"ready"`
-	Message      string   `json:"message,omitempty"`
-}
 
 // --- secrets ---
 
@@ -94,9 +78,9 @@ type SecretKeyRef struct {
 	Key  string `json:"key"`
 }
 
-// --- typed channels ---
+// --- channel payloads ---
 
-// SlackChannelSpec is a Slack transport: its tokens plus the Slack-native
+// SlackChannelSpec is a Slack transport payload: its tokens plus the Slack-native
 // subjects (user U… ids and channel C… ids) allowed on it.
 type SlackChannelSpec struct {
 	AppToken SecretSource `json:"appToken"`
@@ -105,47 +89,51 @@ type SlackChannelSpec struct {
 	Scopes   []string     `json:"scopes"`
 }
 
-// TelegramChannelSpec is a Telegram transport: its bot token plus Telegram-native
-// subjects (numeric user ids and chat ids) allowed on it.
+// TelegramChannelSpec is a Telegram transport payload: its bot token plus
+// Telegram-native subjects (numeric user ids and chat ids) allowed on it.
 type TelegramChannelSpec struct {
 	BotToken SecretSource `json:"botToken"`
 	Users    []string     `json:"users"`
 	Scopes   []string     `json:"scopes"`
 }
 
-// WebChannelUser is one login credential stored sealed in the channel CRD.
+// WebChannelUser is one login credential carried sealed in the channel payload.
 // The name is in plaintext; the password is a SecretSource (typically
 // inPlaceEncrypted). POST /api/login validates the pair and returns the channel
 // bearer token on success.
 type WebChannelUser struct {
-	Name     string      `json:"name"`
+	Name     string       `json:"name"`
 	Password SecretSource `json:"password"`
 }
 
-// WebChannelSpec is the HTTP-driven web channel. Token is the bearer credential
-// that gates all web API requests. Users are login credentials: clients that
-// don't know the token can exchange a username/password via POST /api/login to
-// receive it.
+// WebChannelSpec is the HTTP-driven web channel payload. Token is the bearer
+// credential that gates all web API requests. Users are login credentials:
+// clients that don't know the token can exchange a username/password via POST
+// /api/login to receive it.
 type WebChannelSpec struct {
 	Token  *SecretSource    `json:"token,omitempty"`
 	Users  []WebChannelUser `json:"users,omitempty"`
 	Scopes []string         `json:"scopes,omitempty"`
 }
 
-// ChannelStatus reports validation state for any channel kind.
-type ChannelStatus struct {
-	Ready   bool   `json:"ready"`
-	Message string `json:"message,omitempty"`
+// Channel is one element of a Manifest's channels array: a typed ADT discriminated
+// by Kind, with the matching payload (Slack/Telegram/Web) populated. Name is the
+// channel's identifier within the Manifest.
+type Channel struct {
+	Kind     string               `json:"kind"`
+	Name     string               `json:"name"`
+	Slack    *SlackChannelSpec    `json:"slack,omitempty"`
+	Telegram *TelegramChannelSpec `json:"telegram,omitempty"`
+	Web      *WebChannelSpec      `json:"web,omitempty"`
 }
 
-// --- ChannelBinding ---
+// --- capabilities ---
 
-// Capability is the unified declaration and grant for one capability: name,
-// optional flag, and scoped ADT settings. Optional capabilities whose provider
-// Normalize returns an error are silently skipped; required ones fail the binding.
+// Capability is the unified declaration and grant for one capability: name and
+// scoped ADT settings. A capability whose provider Normalize returns an error
+// fails the manifest.
 type Capability struct {
 	Name     string                  `json:"name"`
-	Optional bool                    `json:"optional,omitempty"`
 	Settings map[string]SettingValue `json:"settings,omitempty"`
 }
 
@@ -160,28 +148,35 @@ type ChildSpec struct {
 	OnFailure    string       `json:"onFailure,omitempty"`
 }
 
-// ChannelRef names a typed channel: its kind (SlackChannel/TelegramChannel/
-// WebChannel) and resource name.
-type ChannelRef struct {
-	Kind string `json:"kind"`
-	Name string `json:"name"`
+// --- Manifest ---
+
+// Brain references the OCI brain artifact, inlined into the Manifest. The artifact
+// bundles one or more named WASM binaries (the root brain plus any child brains).
+type Brain struct {
+	// Artifact is the OCI reference (e.g. ghcr.io/org/brain-k8s:1.4).
+	Artifact string `json:"artifact"`
+	// PullSecretRef names a Secret (docker-config or basic auth) for the registry.
+	PullSecretRef string `json:"pullSecretRef,omitempty"`
 }
 
-// ChannelBindingSpec declares the capability tree and wires the brain to one or
-// more channels. Capabilities is the combined declaration+grant for the root brain.
-// Children defines the delegation tree. Channels replaces the old single channelRef.
-type ChannelBindingSpec struct {
-	BrainRef     string       `json:"brainRef"`
-	Channels     []ChannelRef `json:"channels"`
+// ManifestSpec is the single control-plane resource: an inlined brain, the
+// channels it serves, the capability tree, and the system prompt. Capabilities is
+// the combined declaration+grant for the root brain; Children defines the
+// delegation tree.
+type ManifestSpec struct {
+	Brain        Brain        `json:"brain"`
+	Channels     []Channel    `json:"channels"`
 	SystemPrompt SettingValue `json:"systemPrompt,omitempty"`
 	Capabilities []Capability `json:"capabilities"`
 	Children     []ChildSpec  `json:"children,omitempty"`
 }
 
-// ChannelBindingStatus reports validation state.
-type ChannelBindingStatus struct {
+// ManifestStatus reports resolution state for a Manifest.
+type ManifestStatus struct {
 	Ready   bool   `json:"ready"`
 	Message string `json:"message,omitempty"`
+	Digest  string `json:"digest,omitempty"`  // root manifest content digest
+	BrainID string `json:"brainID,omitempty"` // resolved root brain id (digest/name)
 }
 
 // ResolveLiterals extracts only the literal settings from a settings map,

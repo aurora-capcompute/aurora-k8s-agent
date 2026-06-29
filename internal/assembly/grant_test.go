@@ -64,7 +64,7 @@ func (rejectProvider) IsSubset(_ string, _, _ json.RawMessage) error { return ni
 func TestBuildManifest(t *testing.T) {
 	caps := []v1alpha1.Capability{
 		{Name: "k8s.get"},
-		{Name: "k8s.apply", Optional: true},
+		{Name: "k8s.apply"},
 		{Name: "openai.chat", Settings: map[string]v1alpha1.SettingValue{
 			"base_url": {Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`"https://api.openai.com/v1"`)},
 		}},
@@ -88,28 +88,16 @@ func TestBuildManifest(t *testing.T) {
 	}
 }
 
-func TestBuildManifestOptionalSkipped(t *testing.T) {
-	// rejectProvider rejects all capabilities; optional ones should be skipped,
-	// required ones should cause an error.
+func TestBuildManifestCapabilityRejected(t *testing.T) {
+	// rejectProvider rejects all capabilities; any rejected capability fails the
+	// whole manifest (there is no optional escape hatch).
 	caps := []v1alpha1.Capability{
-		{Name: "k8s.get", Optional: true},
+		{Name: "k8s.get"},
 		{Name: "openai.chat"},
 	}
-
-	// k8s.get is optional so it's skipped; openai.chat is required so it fails.
 	_, err := BuildManifest("brain", "", "b", "digest", caps, nil, rejectProvider{})
 	if err == nil {
-		t.Fatal("required capability rejected by Normalize should fail BuildManifest")
-	}
-
-	// All optional → succeeds with empty capabilities.
-	optOnly := []v1alpha1.Capability{{Name: "k8s.get", Optional: true}}
-	m, err := BuildManifest("brain", "", "b", "digest", optOnly, nil, rejectProvider{})
-	if err != nil {
-		t.Fatalf("all-optional: %v", err)
-	}
-	if len(m.Capabilities) != 0 {
-		t.Fatalf("expected empty capabilities, got %v", m.Capabilities)
+		t.Fatal("a capability rejected by Normalize should fail BuildManifest")
 	}
 }
 
