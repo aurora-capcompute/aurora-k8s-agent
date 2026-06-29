@@ -111,7 +111,7 @@ export function subscribe(
   );
   const handler = () => onEvent();
   es.onmessage = handler;
-  for (const t of ["snapshot", "run.updated", "journal.appended"]) {
+  for (const t of ["snapshot", "run.updated", "journal.appended", "task.created", "task.updated"]) {
     es.addEventListener(t, handler);
   }
   if (onProgress) {

@@ -31,6 +31,7 @@ type ChildData = {
   name?: string;
   status: RunStatus;
   revMap: Record<string, JournalEntry[]>;
+  tasks: TaskSnapshot[];
 };
 
 function flattenChildren(node: RunGraphNode): { runID: string; name?: string; status: RunStatus }[] {
@@ -385,10 +386,11 @@ export function DebugDrawer({
       const children = flattenChildren(graph);
       return await Promise.all(
         children.map(async ({ runID: cid, name: agentName, status }) => {
-          const revMap = await api
-            .journalRevisions(cid)
-            .catch(() => ({}) as Record<string, JournalEntry[]>);
-          return { runID: cid, name: agentName, status, revMap };
+          const [revMap, tasks] = await Promise.all([
+            api.journalRevisions(cid).catch(() => ({}) as Record<string, JournalEntry[]>),
+            api.tasks(cid).catch(() => [] as TaskSnapshot[]),
+          ]);
+          return { runID: cid, name: agentName, status, revMap, tasks };
         }),
       );
     } catch {
@@ -454,7 +456,16 @@ export function DebugDrawer({
   const resolve = (task: TaskSnapshot, decision: Decision) =>
     act(() => api.resolveTask(task.id, task.webhook_token, { decision, actor: "ui" }));
 
-  const pending = tasks.filter((t) => t.state === "pending");
+  const childTasksPending = childData.flatMap((c) =>
+    c.tasks.filter((t) => t.state === "pending").map((t) => ({
+      ...t,
+      _childName: displayName(c.name, c.runID),
+    })),
+  );
+  const pending = [
+    ...tasks.filter((t) => t.state === "pending").map((t) => ({ ...t, _childName: undefined as string | undefined })),
+    ...childTasksPending,
+  ];
   const revisions = Object.keys(revMap).map(Number).sort((a, b) => a - b);
   const viewedEntries = revMap[String(viewRevision)] ?? [];
 
@@ -532,6 +543,9 @@ export function DebugDrawer({
               <div className="tasks">
                 {pending.map((t) => (
                   <div key={t.id} className="task">
+                    {t._childName && (
+                      <div className="task-agent">{t._childName}</div>
+                    )}
                     <div className="task-summary">{t.summary || t.call.name}</div>
                     <code className="task-call">{t.call.name}</code>
                     <div className="task-actions">
