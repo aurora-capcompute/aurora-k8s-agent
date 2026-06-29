@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, UnauthorizedError } from "./api";
 import type { ManifestInfo, ThreadSummary } from "./types";
+import { HotkeyHelp } from "./components/HotkeyHelp";
 import { Login } from "./components/Login";
 import { Sidebar } from "./components/Sidebar";
 import { ThreadView } from "./components/ThreadView";
@@ -17,6 +18,15 @@ export default function App() {
   const [needsLogin, setNeedsLogin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loginKey, setLoginKey] = useState(0);
+  const [showHelp, setShowHelp] = useState(false);
+
+  // Stable refs so the hotkey handler never needs to re-register.
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  const threadRef = useRef(thread);
+  threadRef.current = thread;
+  const newThreadRef = useRef<() => void>(() => {});
+  const handleThreadSelectRef = useRef<(id: string) => void>(() => {});
 
   const onUnauthorized = useCallback(() => setNeedsLogin(true), []);
 
@@ -95,6 +105,50 @@ export default function App() {
     // Don't clear drawerRunID — keeps the last-viewed run selected.
   };
 
+  // Keep refs current so the hotkey handler (registered once) sees fresh values.
+  newThreadRef.current = () => void newThread();
+  handleThreadSelectRef.current = handleThreadSelect;
+
+  // Escape always blurs any focused input, restoring hotkey availability.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const t = document.activeElement;
+      if (t instanceof HTMLElement && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+        t.blur();
+      }
+    };
+    window.addEventListener("keydown", handler, { capture: true });
+    return () => window.removeEventListener("keydown", handler, { capture: true });
+  }, []);
+
+  // Global hotkeys: n, J/K, `, ?
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+
+      if (e.key === "?") { setShowHelp((h) => !h); return; }
+      if (e.key === "n") { newThreadRef.current(); return; }
+      if (e.key === "`") { setSidebarCollapsed((c) => !c); return; }
+
+      if (e.key === "J" || e.key === "K") {
+        const ts = threadsRef.current;
+        if (ts.length === 0) return;
+        const sorted = [...ts].sort(
+          (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+        );
+        const idx = sorted.findIndex((t) => t.id === threadRef.current);
+        const next = e.key === "J" ? idx + 1 : idx - 1;
+        const chosen = sorted[Math.max(0, Math.min(sorted.length - 1, next))];
+        if (chosen) handleThreadSelectRef.current(chosen.id);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []); // stable: all values accessed through refs or stable setters
+
   if (loading) {
     return (
       <div className="login-wrap">
@@ -116,6 +170,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {showHelp && <HotkeyHelp onClose={() => setShowHelp(false)} />}
       <Sidebar
         manifests={manifests}
         selectedManifest={manifest}
@@ -139,6 +194,7 @@ export default function App() {
             drawerRunID={drawerRunID}
             onToggleDrawer={toggleDrawer}
             onRunClick={openDrawer}
+            onRunSelect={(id) => setDrawerRunID(id)}
             onDrawerClose={() => setDrawerOpen(false)}
             onUnauthorized={onUnauthorized}
             onReloadThreads={() => {

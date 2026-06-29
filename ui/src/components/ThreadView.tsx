@@ -20,6 +20,7 @@ export function ThreadView({
   drawerRunID,
   onToggleDrawer,
   onRunClick,
+  onRunSelect,
   onDrawerClose,
   onUnauthorized,
   onReloadThreads,
@@ -29,6 +30,7 @@ export function ThreadView({
   drawerRunID: string | null;
   onToggleDrawer: () => void;
   onRunClick: (runID: string) => void;
+  onRunSelect: (runID: string) => void;
   onDrawerClose: () => void;
   onUnauthorized?: () => void;
   onReloadThreads?: () => void;
@@ -40,8 +42,19 @@ export function ThreadView({
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<Map<string, string[]>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const onReloadThreadsRef = useRef(onReloadThreads);
   useEffect(() => { onReloadThreadsRef.current = onReloadThreads; }, [onReloadThreads]);
+
+  // Stable refs for hotkey handler (no re-registration on prop/state change).
+  const rootRunsRef = useRef<{ run_id: string }[]>([]);
+  const activeDrawerRunIDRef = useRef<string | null>(null);
+  const drawerOpenRef = useRef(drawerOpen);
+  drawerOpenRef.current = drawerOpen;
+  const onRunClickRef = useRef(onRunClick);
+  onRunClickRef.current = onRunClick;
+  const onRunSelectRef = useRef(onRunSelect);
+  onRunSelectRef.current = onRunSelect;
 
   const handleError = useCallback(
     (e: unknown) => {
@@ -104,6 +117,46 @@ export function ThreadView({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [graph]);
 
+  // `d` toggles the debug drawer; guard against firing while typing
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "d" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      onToggleDrawer();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onToggleDrawer]);
+
+  // `/` focuses the composer; `j`/`k` navigates runs when drawer is closed.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      const typing = !!(t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable));
+
+      if (e.key === "/" && !typing) {
+        e.preventDefault();
+        inputRef.current?.focus();
+        return;
+      }
+      if (typing) return;
+
+      if ((e.key === "j" || e.key === "k") && !drawerOpenRef.current) {
+        const runs = rootRunsRef.current;
+        if (runs.length === 0) return;
+        const cur = activeDrawerRunIDRef.current;
+        const idx = cur ? runs.findIndex((r) => r.run_id === cur) : -1;
+        const next = e.key === "j" ? idx + 1 : idx - 1;
+        const chosen = runs[Math.max(0, Math.min(runs.length - 1, next))];
+        if (chosen) onRunSelectRef.current(chosen.run_id);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []); // stable: all mutable values accessed through refs
+
   const send = async () => {
     const message = input.trim();
     if (!message) return;
@@ -130,6 +183,10 @@ export function ThreadView({
   const activeDrawerRunID =
     drawerRunID ?? (rootRuns.length > 0 ? rootRuns[rootRuns.length - 1].run_id : null);
 
+  // Keep refs current for the stable hotkey handler.
+  rootRunsRef.current = rootRuns;
+  activeDrawerRunIDRef.current = activeDrawerRunID;
+
   return (
     <div className="thread-shell">
       <div className="thread-header">
@@ -150,7 +207,7 @@ export function ThreadView({
               <div className="transcript-empty">Send a message to start.</div>
             )}
             {rootRuns.map((run) => (
-              <div key={run.run_id} className="exchange">
+              <div key={run.run_id} className={`exchange${run.run_id === activeDrawerRunID ? " active" : ""}`}>
                 <div className="msg user">{run.message}</div>
 
                 {!TERMINAL.has(run.status) &&
@@ -191,6 +248,7 @@ export function ThreadView({
         <div className="composer-wrap">
           <div className="composer">
             <textarea
+              ref={inputRef}
               value={input}
               placeholder="Message…"
               onChange={(e) => setInput(e.target.value)}
