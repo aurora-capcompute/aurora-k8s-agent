@@ -1,6 +1,0 @@
-apiVersion: v2
-name: aurora-ui
-description: Aurora web UI — a separate frontend for the Aurora agent.
-type: application
-version: 0.1.0
-appVersion: "0.1.0"
