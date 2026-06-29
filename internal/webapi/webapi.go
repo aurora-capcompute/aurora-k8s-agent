@@ -39,6 +39,7 @@ func Handler(runtime aurora.Runtime, channel *webchannel.Channel) http.Handler {
 	mux.HandleFunc("GET /api/runs/{id}", h.getRun)
 	mux.HandleFunc("GET /api/runs/{id}/graph", h.runGraph)
 	mux.HandleFunc("GET /api/runs/{id}/journal", h.runJournal)
+	mux.HandleFunc("GET /api/runs/{id}/journal/revisions", h.runJournalRevisions)
 	mux.HandleFunc("GET /api/runs/{id}/tasks", h.runTasks)
 	mux.HandleFunc("GET /api/brains", h.listBrains)
 
@@ -267,6 +268,15 @@ func (h *handler) runJournal(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := h.runtime.Journal(run.ID)
 	writeJSON(w, entries, err)
+}
+
+func (h *handler) runJournalRevisions(w http.ResponseWriter, r *http.Request) {
+	run, ok := h.runAccess(w, r, r.PathValue("id"))
+	if !ok {
+		return
+	}
+	revisions, err := h.runtime.JournalRevisions(run.ID)
+	writeJSON(w, revisions, err)
 }
 
 func (h *handler) runTasks(w http.ResponseWriter, r *http.Request) {

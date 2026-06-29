@@ -80,6 +80,9 @@ func (r *flowRuntime) GetRun(string) (aurora.RunSnapshot, error) {
 	return aurora.RunSnapshot{ID: "run-1", Status: aurora.RunQueued}, nil
 }
 func (r *flowRuntime) Journal(string) ([]aurora.JournalEntry, error) { return nil, nil }
+func (r *flowRuntime) JournalRevisions(string) (map[uint64][]aurora.JournalEntry, error) {
+	return nil, nil
+}
 func (r *flowRuntime) CallGraph(string) (aurora.RunGraphNode, error) {
 	return aurora.RunGraphNode{}, nil
 }

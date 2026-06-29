@@ -525,28 +525,10 @@ body { margin: 0; overflow-x: hidden; }
   text-align: center;
 }
 
-.drawer-body {
+.drawer-scroll {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: row;
-  overflow: hidden;
-}
-
-.drawer-left {
-  width: 380px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border);
   overflow-y: auto;
-}
-
-.drawer-right {
-  flex: 1;
-  min-width: 0;
-  position: relative;
-  background: var(--bg);
 }
 
 .drawer-controls {
@@ -584,67 +566,282 @@ body { margin: 0; overflow-x: hidden; }
 
 .drawer-section:last-child { border-bottom: none; }
 
-
-/* ── Journal list ─────────────────────────────────────────────── */
-.journal-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 4px;
+/* ── Revision history slider ──────────────────────────────────── */
+.rev-slider {
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 
-.journal-row {
+.rev-slider-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.rev-slider-pos {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+}
+
+.rev-track {
+  display: flex;
+  align-items: flex-start;
+  position: relative;
+  padding-bottom: 4px;
+}
+
+.rev-track::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 20px;
+  right: 20px;
+  height: 2px;
+  background: var(--border);
+}
+
+.rev-tick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.rev-tick:hover .tick-dot {
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.tick-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--border);
+  border: 2px solid var(--surface);
+  flex-shrink: 0;
+  transition: background 100ms;
+}
+
+.rev-tick.past .tick-dot {
+  background: var(--text-tertiary);
+}
+
+.rev-tick.current .tick-dot {
+  background: var(--accent);
+  border-color: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.tick-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+}
+
+.rev-tick.current .tick-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Journal table ────────────────────────────────────────────── */
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  table-layout: auto;
+}
+
+.log-table thead th {
+  text-align: left;
+  padding: 6px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.log-row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 80ms;
+}
+
+.log-row:hover { background: var(--bg); }
+
+.log-row.log-row-open { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+
+.log-row.log-row-retry {
+  background: color-mix(in srgb, #6a1b9a 5%, transparent);
+}
+
+.log-row.log-row-retry:hover {
+  background: color-mix(in srgb, #6a1b9a 10%, transparent);
+}
+
+/* Carried-forward entries: written in a prior revision, shown as context */
+.log-row.log-row-carried {
+  opacity: 0.45;
+}
+
+.log-row.log-row-carried:hover {
+  opacity: 0.7;
+  background: var(--bg);
+}
+
+.log-row td {
+  padding: 5px 8px;
+  vertical-align: middle;
+}
+
+.col-idx {
+  width: 32px;
+  text-align: right;
+  color: var(--text-tertiary);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 11px;
+}
+
+.col-rev  { width: 44px; text-align: center; }
+.col-status { width: 108px; }
+.col-call { width: 220px; }
+.col-summary {
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0;
+}
+
+.call-name {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  max-width: 200px;
+}
+
+.jrev {
+  font-size: 10px;
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  color: var(--text-tertiary);
+}
+
+.jrev.jrev-retry {
+  color: #6a1b9a;
+  font-weight: 700;
+}
+
+.log-detail-row td { padding: 0; }
+
+.log-detail {
+  padding: 8px 12px;
+  background: var(--bg);
+  border-bottom: 2px solid var(--border);
+}
+
+.log-empty {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 16px 0;
+  text-align: center;
+}
+
+/* ── Child / subrun sections ──────────────────────────────────── */
+.child-section {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.child-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   text-align: left;
   background: none;
   border: none;
-  border-radius: 6px;
-  padding: 5px 6px;
+  padding: 8px 0;
   cursor: pointer;
   font: inherit;
-  min-width: 0;
-  overflow: hidden;
+  color: var(--text);
 }
 
-.journal-row:hover,
-.journal-row.expanded { background: var(--bg); }
+.child-header:hover { color: var(--accent); }
 
-.journal-name {
-  font-family: ui-monospace, "Cascadia Mono", monospace;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.journal-msg {
+.child-caret {
   font-size: 11px;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100px;
+  color: var(--text-tertiary);
+  width: 12px;
   flex-shrink: 0;
 }
 
-.journal-detail { margin: 2px 0 4px; }
-
-.child-msg {
-  font-weight: 400;
-  text-transform: none;
-  color: var(--text-secondary);
-  font-size: 11px;
+.child-agent-name {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-.drawer-empty-sm {
+.child-tool {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
   font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.child-id {
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.child-count {
+  font-size: 11px;
   color: var(--text-tertiary);
-  padding: 8px 0;
+  flex-shrink: 0;
+}
+
+.child-table-wrap {
+  padding-left: 16px;
+  border-left: 2px solid var(--border);
+  margin-left: 6px;
+  margin-bottom: 8px;
+}
+
+.label-sub {
+  font-weight: 400;
+  text-transform: none;
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-left: 4px;
 }
 
 /* ── Shared ───────────────────────────────────────────────────── */
@@ -666,7 +863,7 @@ body { margin: 0; overflow-x: hidden; }
   margin: 8px 16px;
 }
 
-/* ── Badges (keep for CallGraph + DebugDrawer) ────────────────── */
+/* ── Badges ───────────────────────────────────────────────────── */
 .badge {
   display: inline-block;
   font-size: 10px;

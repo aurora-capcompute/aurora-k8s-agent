@@ -78,6 +78,7 @@ export interface ThreadGraph {
 
 export interface RunGraphNode {
   run_id: string;
+  name?: string;
   thread_id: string;
   parent_id?: string;
   status: RunStatus;

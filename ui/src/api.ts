@@ -89,6 +89,8 @@ export const api = {
     post<RunSnapshot>(`/api/runs/${runID}/retry`, { mode }),
   stopRun: (runID: string) => post<RunSnapshot>(`/api/runs/${runID}/stop`),
   journal: (runID: string) => get<JournalEntry[]>(`/api/runs/${runID}/journal`),
+  journalRevisions: (runID: string) =>
+    get<Record<string, JournalEntry[]>>(`/api/runs/${runID}/journal/revisions`),
   tasks: (runID: string) => get<TaskSnapshot[]>(`/api/runs/${runID}/tasks`),
   resolveTask: (taskID: string, token: string, resolution: Resolution) =>
     post<TaskSnapshot>(`/api/tasks/${taskID}/resolve`, { token, resolution }),
