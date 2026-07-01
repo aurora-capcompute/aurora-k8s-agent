@@ -13,8 +13,8 @@ import (
 )
 
 // nsProvider implements aurora.DispatcherProvider with a Normalize that passes
-// settings through, validating nothing (so BuildManifest tests can focus on
-// the assembly logic).
+// settings through, validating nothing (so BuildManifest tests can focus on the
+// assembly logic).
 type nsProvider struct{}
 
 func (nsProvider) Normalize(_ string, s json.RawMessage) (json.RawMessage, error) {
@@ -28,49 +28,25 @@ func (nsProvider) NewDispatcher(context.Context, aurora.RunContext, aurora.Manif
 	return nil, nil
 }
 
-func (nsProvider) IsSubset(_ string, parent, child json.RawMessage) error {
-	type settings struct {
-		Namespaces []string `json:"namespaces"`
-	}
-	var p, c settings
-	_ = json.Unmarshal(parent, &p)
-	_ = json.Unmarshal(child, &c)
-	if len(p.Namespaces) == 0 {
-		return nil
-	}
-	allowed := make(map[string]struct{}, len(p.Namespaces))
-	for _, ns := range p.Namespaces {
-		allowed[ns] = struct{}{}
-	}
-	for _, ns := range c.Namespaces {
-		if _, ok := allowed[ns]; !ok {
-			return fmt.Errorf("namespace %q not allowed", ns)
-		}
-	}
-	return nil
-}
-
 // rejectProvider returns an error for every Normalize call.
 type rejectProvider struct{}
 
-func (rejectProvider) Normalize(name string, _ json.RawMessage) (json.RawMessage, error) {
-	return nil, fmt.Errorf("capability %q: not available", name)
+func (rejectProvider) Normalize(toolType string, _ json.RawMessage) (json.RawMessage, error) {
+	return nil, fmt.Errorf("tool type %q: not available", toolType)
 }
 func (rejectProvider) NewDispatcher(context.Context, aurora.RunContext, aurora.Manifest) (dispatcher.Dispatcher[aurora.RunContext], error) {
 	return nil, nil
 }
-func (rejectProvider) IsSubset(_ string, _, _ json.RawMessage) error { return nil }
 
 func TestBuildManifest(t *testing.T) {
-	caps := []v1alpha1.Capability{
-		{Name: "k8s.get"},
-		{Name: "k8s.apply"},
-		{Name: "openai.chat", Settings: map[string]v1alpha1.SettingValue{
+	tools := []v1alpha1.Tool{
+		{Name: "cluster", Type: "core.k8s"},
+		{Name: "llm", Type: "core.openaiApi", Hidden: true, Settings: map[string]v1alpha1.SettingValue{
 			"base_url": {Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`"https://api.openai.com/v1"`)},
 		}},
 	}
 
-	m, err := BuildManifest("sha256:abc/ops", "You are helpful.", "my-binding", "sha256:abc", caps, nil, nsProvider{})
+	m, err := BuildManifest("sha256:abc/ops", "You are helpful.", "my-binding", "sha256:abc", tools, nsProvider{})
 	if err != nil {
 		t.Fatalf("BuildManifest: %v", err)
 	}
@@ -83,50 +59,59 @@ func TestBuildManifest(t *testing.T) {
 	if m.SystemPrompt != "You are helpful." {
 		t.Fatalf("SystemPrompt = %q", m.SystemPrompt)
 	}
-	if len(m.Capabilities) != 3 {
-		t.Fatalf("capabilities = %v", m.Capabilities)
+	if len(m.Tools) != 2 {
+		t.Fatalf("tools = %v", m.Tools)
+	}
+	if !m.Tools[1].Hidden {
+		t.Fatalf("llm tool should be hidden: %+v", m.Tools[1])
 	}
 }
 
-func TestBuildManifestCapabilityRejected(t *testing.T) {
-	// rejectProvider rejects all capabilities; any rejected capability fails the
-	// whole manifest (there is no optional escape hatch).
-	caps := []v1alpha1.Capability{
-		{Name: "k8s.get"},
-		{Name: "openai.chat"},
-	}
-	_, err := BuildManifest("brain", "", "b", "digest", caps, nil, rejectProvider{})
-	if err == nil {
-		t.Fatal("a capability rejected by Normalize should fail BuildManifest")
+func TestBuildManifestToolRejected(t *testing.T) {
+	// rejectProvider rejects every leaf tool; any rejection fails the whole
+	// manifest (there is no optional escape hatch).
+	tools := []v1alpha1.Tool{{Name: "cluster", Type: "core.k8s"}}
+	if _, err := BuildManifest("brain", "", "b", "digest", tools, rejectProvider{}); err == nil {
+		t.Fatal("a tool rejected by Normalize should fail BuildManifest")
 	}
 }
 
-func TestBuildManifestChildren(t *testing.T) {
-	children := []v1alpha1.ChildSpec{{
-		Name:         "researcher",
-		Brain:        "ops",
-		SystemPrompt: "You are a researcher.",
-		Capabilities: []v1alpha1.Capability{{Name: "llm.chat"}},
+func TestBuildManifestAgentTool(t *testing.T) {
+	tools := []v1alpha1.Tool{{
+		Name: "researcher",
+		Type: v1alpha1.AgentToolType,
+		Settings: map[string]v1alpha1.SettingValue{
+			"code":          {Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`"ops"`)},
+			"system_prompt": {Type: v1alpha1.SettingLiteral, Value: json.RawMessage(`"You are a researcher."`)},
+		},
+		Tools: []v1alpha1.Tool{{Name: "llm", Type: "core.openaiApi"}},
 	}}
-	m, err := BuildManifest("sha256:abc/ops", "", "b", "sha256:abc", nil, children, nsProvider{})
+	m, err := BuildManifest("sha256:abc/ops", "", "b", "sha256:abc", tools, nsProvider{})
 	if err != nil {
 		t.Fatalf("BuildManifest: %v", err)
 	}
-	if len(m.Children) != 1 {
-		t.Fatalf("children = %v", m.Children)
+	if len(m.Tools) != 1 {
+		t.Fatalf("tools = %v", m.Tools)
 	}
-	ch := m.Children[0]
-	if ch.Name != "researcher" {
-		t.Fatalf("child name = %q", ch.Name)
+	tool := m.Tools[0]
+	if tool.Name != "researcher" || tool.Type != v1alpha1.AgentToolType {
+		t.Fatalf("agent tool = %+v", tool)
 	}
-	// Brain is expanded to artifactDigest/brainName.
-	if ch.Brain != "sha256:abc/ops" {
-		t.Fatalf("child Brain = %q, want sha256:abc/ops", ch.Brain)
+	if len(tool.Tools) != 1 || tool.Tools[0].Name != "llm" {
+		t.Fatalf("nested tools = %+v", tool.Tools)
 	}
-	if ch.SystemPrompt != "You are a researcher." {
-		t.Fatalf("child SystemPrompt = %q", ch.SystemPrompt)
+	var as aurora.AgentSettings
+	if err := json.Unmarshal(tool.Settings, &as); err != nil {
+		t.Fatalf("decode agent settings: %v", err)
 	}
-	if ch.BindingRef != "b" {
-		t.Fatalf("child BindingRef = %q", ch.BindingRef)
+	// Code is expanded to artifactDigest/code.
+	if as.Code != "sha256:abc/ops" {
+		t.Fatalf("agent Code = %q, want sha256:abc/ops", as.Code)
+	}
+	if as.SystemPrompt != "You are a researcher." {
+		t.Fatalf("agent SystemPrompt = %q", as.SystemPrompt)
+	}
+	if as.BindingRef != "b" {
+		t.Fatalf("agent BindingRef = %q", as.BindingRef)
 	}
 }

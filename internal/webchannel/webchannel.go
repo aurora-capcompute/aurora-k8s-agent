@@ -109,9 +109,9 @@ func (c *Channel) Apply(res controller.Resolved, resolver secrets.Resolver) {
 		if b.Source != "web" {
 			continue
 		}
-		capabilities := make([]string, len(b.Manifest.Capabilities))
-		for i, cap := range b.Manifest.Capabilities {
-			capabilities[i] = cap.Name
+		capabilities := make([]string, 0, len(b.Manifest.Tools))
+		for _, t := range b.Manifest.Tools {
+			capabilities = append(capabilities, t.Name)
 		}
 		info := ManifestInfo{
 			Name:         b.Name,

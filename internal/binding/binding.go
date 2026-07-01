@@ -46,7 +46,7 @@ type Resolved struct {
 	Scopes             []string
 	Manifest           aurora.Manifest
 	Digest             string
-	CapabilitySettings map[string]map[string]v1alpha1.SettingValue // capName → settingName → SettingValue
+	CapabilitySettings map[string]map[string]v1alpha1.SettingValue // toolName → settingName → SettingValue
 	BindingRef         string
 }
 

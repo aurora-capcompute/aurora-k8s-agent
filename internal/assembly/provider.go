@@ -107,16 +107,8 @@ func (p *Provider) resolveOne(sv v1alpha1.SettingValue) (json.RawMessage, error)
 	}
 }
 
-func (p *Provider) Normalize(name string, settings json.RawMessage) (json.RawMessage, error) {
-	return p.registry.Normalize(name, settings)
-}
-
-func (p *Provider) IsSubset(name string, parent, child json.RawMessage) error {
-	return p.registry.IsSubset(name, parent, child)
-}
-
-func (p *Provider) IsCognition(name string) bool {
-	return p.registry.IsCognition(name)
+func (p *Provider) Normalize(toolType string, settings json.RawMessage) (json.RawMessage, error) {
+	return p.registry.Normalize(toolType, settings)
 }
 
 func (p *Provider) NewDispatcher(
@@ -124,30 +116,30 @@ func (p *Provider) NewDispatcher(
 	_ aurora.RunContext,
 	manifest aurora.Manifest,
 ) (dispatcher.Dispatcher[aurora.RunContext], error) {
-	var entries []registry.Entry
+	leaf := manifest.LeafTools()
+	var warmed map[string]json.RawMessage
 	if manifest.BindingRef != "" {
 		val, ok := p.store.Load(manifest.BindingRef)
 		if !ok {
 			return nil, fmt.Errorf("no warmup entry for binding %q: call Warmup before dispatching", manifest.BindingRef)
 		}
-		entry := val.(bindingEntry)
-		entries = make([]registry.Entry, 0, len(manifest.Capabilities))
-		for _, capability := range manifest.Capabilities {
-			settings := entry.caps[capability.Name]
-			if len(settings) == 0 {
-				// Child-only capabilities (not present in root) aren't warmed up;
-				// fall back to the already-normalized settings from the manifest.
-				settings = capability.Settings
-			}
-			entries = append(entries, registry.Entry{Name: capability.Name, Settings: settings})
+		warmed = val.(bindingEntry).caps
+	}
+	entries := make([]registry.Entry, 0, len(leaf))
+	k8sTools := make(map[string]struct{})
+	for _, tool := range leaf {
+		settings := warmed[tool.Name]
+		if len(settings) == 0 {
+			// Child-only tools (not present in the warmed root binding) fall back
+			// to the already-normalized settings carried on the manifest. File-based
+			// bindings take this path for all tools.
+			settings = tool.Settings
 		}
-	} else {
-		// File-based binding: manifest carries plain-JSON settings directly.
-		entries = make([]registry.Entry, 0, len(manifest.Capabilities))
-		for _, capability := range manifest.Capabilities {
-			entries = append(entries, registry.Entry{
-				Name: capability.Name, Settings: capability.Settings,
-			})
+		entries = append(entries, registry.Entry{
+			Name: tool.Name, Type: tool.Type, Settings: settings, Hidden: tool.Hidden,
+		})
+		if tool.Type == "core.k8s" {
+			k8sTools[tool.Name] = struct{}{}
 		}
 	}
 	config, err := p.registry.Build(ctx, entries, p.services)
@@ -155,11 +147,12 @@ func (p *Provider) NewDispatcher(
 		return nil, err
 	}
 	base := builtin.New[aurora.RunContext](config)
-	return &guardedDispatcher{next: base}, nil
+	return &guardedDispatcher{next: base, k8sTools: k8sTools}, nil
 }
 
 type guardedDispatcher struct {
-	next dispatcher.Dispatcher[aurora.RunContext]
+	next     dispatcher.Dispatcher[aurora.RunContext]
+	k8sTools map[string]struct{}
 }
 
 func (d *guardedDispatcher) Capabilities() []dispatcher.Capability {
@@ -172,14 +165,17 @@ func (d *guardedDispatcher) Dispatch(
 	call dispatcher.Call,
 	auth dispatcher.Authorization,
 ) (dispatcher.Outcome, error) {
-	if isKubernetesSecretCall(call) {
+	if d.isKubernetesSecretCall(call) {
 		return dispatcher.Fail("native Kubernetes Secret operations are disabled"), nil
 	}
 	return d.next.Dispatch(ctx, key, call, auth)
 }
 
-func isKubernetesSecretCall(call dispatcher.Call) bool {
-	if !strings.HasPrefix(call.Name, "k8s.") {
+// isKubernetesSecretCall blocks Secret access through a core.k8s tool. The call
+// is addressed by the tool's local name; the operated kind lives in the args
+// (top-level for get/list/delete, under `resource` for apply).
+func (d *guardedDispatcher) isKubernetesSecretCall(call dispatcher.Call) bool {
+	if _, ok := d.k8sTools[call.Name]; !ok {
 		return false
 	}
 	var payload map[string]any
@@ -187,9 +183,9 @@ func isKubernetesSecretCall(call dispatcher.Call) bool {
 		return false
 	}
 	kind, _ := payload["kind"].(string)
-	if call.Name == "k8s.apply" {
-		if resource, ok := payload["resource"].(map[string]any); ok {
-			kind, _ = resource["kind"].(string)
+	if resource, ok := payload["resource"].(map[string]any); ok {
+		if k, _ := resource["kind"].(string); k != "" {
+			kind = k
 		}
 	}
 	return strings.EqualFold(strings.TrimSpace(kind), "secret")

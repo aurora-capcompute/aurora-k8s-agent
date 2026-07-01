@@ -172,14 +172,18 @@ spec:
                       properties:
                         name: { type: string }
                         key: { type: string }
-                capabilities:
+                tools:
                   type: array
                   items:
                     type: object
-                    required: [name]
+                    required: [name, type]
                     properties:
                       name:
                         type: string
+                      type:
+                        type: string
+                      hidden:
+                        type: boolean
                       settings:
                         type: object
                         additionalProperties:
@@ -198,11 +202,13 @@ spec:
                               properties:
                                 name: { type: string }
                                 key: { type: string }
-                children:
-                  type: array
-                  x-kubernetes-preserve-unknown-fields: true
-                  items:
-                    type: object
+                      # Nested composition for core.agent tools; recursive schema
+                      # is preserved opaquely like the top-level tools array.
+                      tools:
+                        type: array
+                        x-kubernetes-preserve-unknown-fields: true
+                        items:
+                          type: object
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

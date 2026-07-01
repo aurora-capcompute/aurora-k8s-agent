@@ -31,8 +31,9 @@ spec:
         botToken: { type: inPlaceEncrypted, ciphertext: AAAA }
         users: ["U1"]
         scopes: ["C1"]
-  capabilities:
-    - name: k8s.get
+  tools:
+    - name: cluster
+      type: core.k8s
 `
 	if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte(doc), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -64,8 +65,8 @@ spec:
 		m.Spec.Channels[0].Telegram.BotToken.Type != "inPlaceEncrypted" {
 		t.Fatalf("channels = %+v", m.Spec.Channels)
 	}
-	if len(m.Spec.Capabilities) != 1 || m.Spec.Capabilities[0].Name != "k8s.get" {
-		t.Fatalf("manifest capabilities = %+v", m.Spec.Capabilities)
+	if len(m.Spec.Tools) != 1 || m.Spec.Tools[0].Name != "cluster" || m.Spec.Tools[0].Type != "core.k8s" {
+		t.Fatalf("manifest tools = %+v", m.Spec.Tools)
 	}
 }
 

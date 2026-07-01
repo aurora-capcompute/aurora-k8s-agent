@@ -1,6 +1,7 @@
 package assembly
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/aurora-capcompute/aurora-capcompute/aurora"
@@ -8,22 +9,17 @@ import (
 	"github.com/aurora-capcompute/aurora-k8s-agent/internal/apis/aurora/v1alpha1"
 )
 
-// BuildManifest constructs an aurora.Manifest from the Manifest CRD's
-// capability and delegation tree. provider.Normalize is called for each
-// capability to fill defaults and validate settings; a capability whose
-// Normalize returns an error fails the manifest. Children are wired to the
-// same artifact via artifactDigest.
+// BuildManifest constructs an aurora.Manifest from the Manifest CRD's unified
+// tool tree. Leaf tools are validated via provider.Normalize (keyed by tool
+// type); `core.agent` tools carry the sub-agent's brain (settings.code, qualified
+// by artifactDigest), system prompt, and failure mode, and recurse into their
+// own tools.
 func BuildManifest(
 	brainID, systemPrompt, bindingName, artifactDigest string,
-	caps []v1alpha1.Capability,
-	children []v1alpha1.ChildSpec,
+	tools []v1alpha1.Tool,
 	provider aurora.DispatcherProvider,
 ) (aurora.Manifest, error) {
-	rootCaps, err := nodeCaps(caps, provider)
-	if err != nil {
-		return aurora.Manifest{}, err
-	}
-	ch, err := buildChildren(children, bindingName, artifactDigest, provider)
+	built, err := buildTools(tools, bindingName, artifactDigest, provider)
 	if err != nil {
 		return aurora.Manifest{}, err
 	}
@@ -32,61 +28,91 @@ func BuildManifest(
 		Brain:        brainID,
 		BindingRef:   bindingName,
 		SystemPrompt: systemPrompt,
-		Capabilities: rootCaps,
-		Children:     ch,
+		Tools:        built,
 	}, nil
 }
 
-func buildChildren(children []v1alpha1.ChildSpec, bindingName, artifactDigest string, provider aurora.DispatcherProvider) ([]aurora.ChildManifest, error) {
-	if len(children) == 0 {
+func buildTools(tools []v1alpha1.Tool, bindingName, artifactDigest string, provider aurora.DispatcherProvider) ([]aurora.Tool, error) {
+	if len(tools) == 0 {
 		return nil, nil
 	}
-	out := make([]aurora.ChildManifest, 0, len(children))
-	for _, ch := range children {
-		caps, err := nodeCaps(ch.Capabilities, provider)
-		if err != nil {
-			return nil, fmt.Errorf("child %q: %w", ch.Name, err)
+	out := make([]aurora.Tool, 0, len(tools))
+	for _, t := range tools {
+		if t.Type == v1alpha1.AgentToolType {
+			settings, err := buildAgentSettings(t, bindingName, artifactDigest)
+			if err != nil {
+				return nil, fmt.Errorf("agent %q: %w", t.Name, err)
+			}
+			sub, err := buildTools(t.Tools, bindingName, artifactDigest, provider)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, aurora.Tool{
+				Name:     t.Name,
+				Type:     t.Type,
+				Settings: settings,
+				Tools:    sub,
+				Hidden:   t.Hidden,
+			})
+			continue
 		}
-		sub, err := buildChildren(ch.Children, bindingName, artifactDigest, provider)
+		resolved := v1alpha1.ResolveLiterals(t.Settings)
+		normalized, err := provider.Normalize(t.Type, resolved)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("tool %q (%s): %w", t.Name, t.Type, err)
 		}
-		out = append(out, aurora.ChildManifest{
-			Name:         ch.Name,
-			Brain:        artifactDigest + "/" + ch.Brain,
-			BindingRef:   bindingName,
-			SystemPrompt: ch.SystemPrompt,
-			Capabilities: caps,
-			Children:     sub,
-			OnFailure:    ch.OnFailure,
+		out = append(out, aurora.Tool{
+			Name:     t.Name,
+			Type:     t.Type,
+			Settings: normalized,
+			Hidden:   t.Hidden,
 		})
 	}
 	return out, nil
 }
 
-// cognitionChecker is an optional interface for providers that classify
-// capabilities as cognition (brain-driving) vs operational (tool).
-type cognitionChecker interface {
-	IsCognition(name string) bool
+// buildAgentSettings assembles a core.agent tool's AgentSettings JSON. Code is
+// the child's short WASM name qualified by the artifact digest; BindingRef ties
+// the child run to the same binding cache as the root for secret warmup.
+func buildAgentSettings(t v1alpha1.Tool, bindingName, artifactDigest string) (json.RawMessage, error) {
+	code, err := literalString(t.Settings, "code")
+	if err != nil {
+		return nil, err
+	}
+	if code == "" {
+		return nil, fmt.Errorf("settings.code (child WASM name) is required")
+	}
+	prompt, err := literalString(t.Settings, "system_prompt")
+	if err != nil {
+		return nil, err
+	}
+	onFailure, err := literalString(t.Settings, "on_failure")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(aurora.AgentSettings{
+		Code:         artifactDigest + "/" + code,
+		BindingRef:   bindingName,
+		SystemPrompt: prompt,
+		OnFailure:    onFailure,
+	})
 }
 
-// nodeCaps resolves one node's capabilities via provider.Normalize. A capability
-// that Normalize rejects fails the node. Cognition capabilities (e.g. openai.chat)
-// are marked Hidden so that visibleCapabilities excludes them from the brain's
-// operational tool list.
-func nodeCaps(caps []v1alpha1.Capability, provider aurora.DispatcherProvider) ([]aurora.CapabilityConfig, error) {
-	var out []aurora.CapabilityConfig
-	for _, c := range caps {
-		settings := v1alpha1.ResolveLiterals(c.Settings)
-		normalized, err := provider.Normalize(c.Name, settings)
-		if err != nil {
-			return nil, fmt.Errorf("capability %q: %w", c.Name, err)
-		}
-		hidden := false
-		if cc, ok := provider.(cognitionChecker); ok {
-			hidden = cc.IsCognition(c.Name)
-		}
-		out = append(out, aurora.CapabilityConfig{Name: c.Name, Settings: normalized, Hidden: hidden})
+// literalString extracts a JSON-string literal setting; a missing key yields "".
+func literalString(settings map[string]v1alpha1.SettingValue, key string) (string, error) {
+	sv, ok := settings[key]
+	if !ok {
+		return "", nil
 	}
-	return out, nil
+	if sv.Type != v1alpha1.SettingLiteral {
+		return "", fmt.Errorf("setting %q must be a literal", key)
+	}
+	if len(sv.Value) == 0 {
+		return "", nil
+	}
+	var s string
+	if err := json.Unmarshal(sv.Value, &s); err != nil {
+		return "", fmt.Errorf("setting %q must be a JSON string: %w", key, err)
+	}
+	return s, nil
 }

@@ -127,25 +127,23 @@ type Channel struct {
 	Web      *WebChannelSpec      `json:"web,omitempty"`
 }
 
-// --- capabilities ---
+// --- tools ---
 
-// Capability is the unified declaration and grant for one capability: name and
-// scoped ADT settings. A capability whose provider Normalize returns an error
-// fails the manifest.
-type Capability struct {
+// AgentToolType is the tool `type` for a sub-agent node in the composition tree.
+const AgentToolType = "core.agent"
+
+// Tool is one node in a manifest's unified composition tree: leaf I/O tools and
+// sub-agents share one shape. Type selects the dispatcher; Name is the local
+// handle the brain routes to. For a `core.agent` tool, Settings carries the
+// sub-agent's `code` (short WASM name), `system_prompt`, and `on_failure`, and
+// Tools holds the sub-agent's own composition. Hidden keeps a tool dispatchable
+// but off the brain's discoverable menu (e.g. the LLM cognition tool).
+type Tool struct {
 	Name     string                  `json:"name"`
+	Type     string                  `json:"type"`
 	Settings map[string]SettingValue `json:"settings,omitempty"`
-}
-
-// ChildSpec defines one node in the brain delegation tree.
-// Brain names the short WASM name within the artifact (not the k8s resource name).
-type ChildSpec struct {
-	Name         string       `json:"name"`
-	Brain        string       `json:"brain"`
-	SystemPrompt string       `json:"systemPrompt,omitempty"`
-	Capabilities []Capability `json:"capabilities,omitempty"`
-	Children     []ChildSpec  `json:"children,omitempty"`
-	OnFailure    string       `json:"onFailure,omitempty"`
+	Tools    []Tool                  `json:"tools,omitempty"`
+	Hidden   bool                    `json:"hidden,omitempty"`
 }
 
 // --- Manifest ---
@@ -160,15 +158,13 @@ type Brain struct {
 }
 
 // ManifestSpec is the single control-plane resource: an inlined brain, the
-// channels it serves, the capability tree, and the system prompt. Capabilities is
-// the combined declaration+grant for the root brain; Children defines the
-// delegation tree.
+// channels it serves, the root system prompt, and the unified tool composition
+// tree (leaf tools plus `core.agent` sub-agents).
 type ManifestSpec struct {
 	Brain        Brain        `json:"brain"`
 	Channels     []Channel    `json:"channels"`
 	SystemPrompt SettingValue `json:"systemPrompt,omitempty"`
-	Capabilities []Capability `json:"capabilities"`
-	Children     []ChildSpec  `json:"children,omitempty"`
+	Tools        []Tool       `json:"tools"`
 }
 
 // ManifestStatus reports resolution state for a Manifest.

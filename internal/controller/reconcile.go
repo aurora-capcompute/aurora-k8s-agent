@@ -144,12 +144,12 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 			continue
 		}
 
-		if err := validateChildBrains(m.Spec.Children, brain.brains); err != nil {
+		if err := validateChildBrains(m.Spec.Tools, brain.brains); err != nil {
 			res.ManifestStatus[m.Name] = manifestNotReady("%v", err)
 			continue
 		}
 
-		if err := validateAllCapabilitySettings(m.Spec.Capabilities, m.Spec.Children); err != nil {
+		if err := validateAllToolSettings(m.Spec.Tools); err != nil {
 			res.ManifestStatus[m.Name] = manifestNotReady("%v", err)
 			continue
 		}
@@ -162,13 +162,13 @@ func Reconcile(ctx context.Context, in Inputs, puller oci.Puller, provider auror
 
 		rootBrainID := brain.digest + "/" + brain.main
 		manifest, err := assembly.BuildManifest(rootBrainID, systemPrompt, m.Name, brain.digest,
-			m.Spec.Capabilities, m.Spec.Children, provider)
+			m.Spec.Tools, provider)
 		if err != nil {
 			res.ManifestStatus[m.Name] = manifestNotReady("%v", err)
 			continue
 		}
 
-		capSettings := collectCapabilitySettings(m.Spec.Capabilities)
+		capSettings := collectToolSettings(m.Spec.Tools)
 		md := digest(manifest)
 
 		for _, ch := range resolvedChans {
@@ -355,59 +355,74 @@ func validateSecret(field string, src v1alpha1.SecretSource) error {
 
 // validateCapabilitySettings checks ADT structure for each setting value:
 // type is known, and required variant fields are present.
-func validateCapabilitySettings(capName string, settings map[string]v1alpha1.SettingValue) error {
+func validateToolSettings(toolName string, settings map[string]v1alpha1.SettingValue) error {
 	for k, sv := range settings {
 		switch sv.Type {
 		case v1alpha1.SettingLiteral:
 			if len(sv.Value) == 0 {
-				return fmt.Errorf("capability %q setting %q: literal value is required", capName, k)
+				return fmt.Errorf("tool %q setting %q: literal value is required", toolName, k)
 			}
 		case v1alpha1.SecretInPlaceEncrypted:
 			if sv.Ciphertext == "" {
-				return fmt.Errorf("capability %q setting %q: ciphertext is required for inPlaceEncrypted", capName, k)
+				return fmt.Errorf("tool %q setting %q: ciphertext is required for inPlaceEncrypted", toolName, k)
 			}
 		case v1alpha1.SecretStorage:
 			if sv.Ref == nil || sv.Ref.Name == "" || sv.Ref.Key == "" {
-				return fmt.Errorf("capability %q setting %q: ref.{name,key} are required for secretStorage", capName, k)
+				return fmt.Errorf("tool %q setting %q: ref.{name,key} are required for secretStorage", toolName, k)
 			}
 		case "":
-			return fmt.Errorf("capability %q setting %q: type is required", capName, k)
+			return fmt.Errorf("tool %q setting %q: type is required", toolName, k)
 		default:
-			return fmt.Errorf("capability %q setting %q: unknown type %q", capName, k, sv.Type)
+			return fmt.Errorf("tool %q setting %q: unknown type %q", toolName, k, sv.Type)
 		}
 	}
 	return nil
 }
 
-// validateAllCapabilitySettings recursively validates ADT structure for
-// capabilities at the root node and all children.
-func validateAllCapabilitySettings(caps []v1alpha1.Capability, children []v1alpha1.ChildSpec) error {
-	for _, cap := range caps {
-		if err := validateCapabilitySettings(cap.Name, cap.Settings); err != nil {
+// validateAllToolSettings recursively validates ADT structure for every tool in
+// the composition tree.
+func validateAllToolSettings(tools []v1alpha1.Tool) error {
+	for _, t := range tools {
+		if err := validateToolSettings(t.Name, t.Settings); err != nil {
 			return err
 		}
+		if t.Type == v1alpha1.AgentToolType {
+			if err := validateAllToolSettings(t.Tools); err != nil {
+				return err
+			}
+		}
 	}
-	for _, ch := range children {
-		if err := validateAllCapabilitySettings(ch.Capabilities, ch.Children); err != nil {
+	return nil
+}
+
+// validateChildBrains checks that every core.agent tool's settings.code names a
+// WASM bundled in the artifact. Typos or missing bundles surface at reconcile
+// time rather than as confusing runtime delegation failures.
+func validateChildBrains(tools []v1alpha1.Tool, available map[string][]byte) error {
+	for _, t := range tools {
+		if t.Type != v1alpha1.AgentToolType {
+			continue
+		}
+		code := agentCode(t)
+		if _, ok := available[code]; !ok {
+			return fmt.Errorf("agent %q references brain %q which is not bundled in the artifact", t.Name, code)
+		}
+		if err := validateChildBrains(t.Tools, available); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateChildBrains checks that every ChildSpec.Brain names a WASM that is
-// bundled in the artifact. Typos or missing bundles surface at reconcile time
-// rather than as confusing runtime delegation failures.
-func validateChildBrains(children []v1alpha1.ChildSpec, available map[string][]byte) error {
-	for _, ch := range children {
-		if _, ok := available[ch.Brain]; !ok {
-			return fmt.Errorf("child %q references brain %q which is not bundled in the artifact", ch.Name, ch.Brain)
-		}
-		if err := validateChildBrains(ch.Children, available); err != nil {
-			return err
-		}
+// agentCode extracts a core.agent tool's `code` (short WASM name) literal.
+func agentCode(t v1alpha1.Tool) string {
+	sv, ok := t.Settings["code"]
+	if !ok || sv.Type != v1alpha1.SettingLiteral || len(sv.Value) == 0 {
+		return ""
 	}
-	return nil
+	var s string
+	_ = json.Unmarshal(sv.Value, &s)
+	return s
 }
 
 // resolveSystemPrompt extracts the system prompt string from its SettingValue.
@@ -427,11 +442,16 @@ func resolveSystemPrompt(sv v1alpha1.SettingValue) (string, error) {
 	}
 }
 
-// collectCapabilitySettings builds the CapabilitySettings map for a binding.
-func collectCapabilitySettings(caps []v1alpha1.Capability) map[string]map[string]v1alpha1.SettingValue {
-	out := make(map[string]map[string]v1alpha1.SettingValue, len(caps))
-	for _, c := range caps {
-		out[c.Name] = c.Settings
+// collectToolSettings builds the warmup CapabilitySettings map for a binding
+// from the root's leaf tools (children fall back to normalized manifest settings
+// at dispatch time), keyed by tool name.
+func collectToolSettings(tools []v1alpha1.Tool) map[string]map[string]v1alpha1.SettingValue {
+	out := make(map[string]map[string]v1alpha1.SettingValue, len(tools))
+	for _, t := range tools {
+		if t.Type == v1alpha1.AgentToolType {
+			continue
+		}
+		out[t.Name] = t.Settings
 	}
 	return out
 }

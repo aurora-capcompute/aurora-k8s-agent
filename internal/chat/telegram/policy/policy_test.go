@@ -37,7 +37,7 @@ func TestParseAuthorizesUser(t *testing.T) {
 	      "manifest": {
 	        "version": 2,
 	        "brain": "kubernetes-agent",
-	        "capabilities": [{"name": "k8s.get", "settings": {"namespaces": ["default"]}}]
+	        "tools": [{"name": "cluster", "type": "core.k8s", "settings": {}}]
 	      }
 	    }
 	  }
@@ -50,8 +50,8 @@ func TestParseAuthorizesUser(t *testing.T) {
 	if !ok {
 		t.Fatal("authorized user was rejected")
 	}
-	if len(user.Manifest.Capabilities) != 1 {
-		t.Fatalf("capabilities = %d", len(user.Manifest.Capabilities))
+	if len(user.Manifest.Tools) != 1 {
+		t.Fatalf("tools = %d", len(user.Manifest.Tools))
 	}
 	if _, ok := set.Authorize(42, -1002); ok {
 		t.Fatal("unauthorized chat was accepted")
@@ -59,7 +59,7 @@ func TestParseAuthorizesUser(t *testing.T) {
 }
 
 func TestParseBindingsFormat(t *testing.T) {
-	manifest := `{"version": 2, "brain": "kubernetes-agent", "capabilities": [{"name": "k8s.get", "settings": {"namespaces": ["default"]}}]}`
+	manifest := `{"version": 2, "brain": "kubernetes-agent", "tools": [{"name": "cluster", "type": "core.k8s", "settings": {}}]}`
 	legacy := []byte(`{"version":1,"users":{"42":{"allowed_chats":[-1001],"manifest":` + manifest + `}}}`)
 	bindings := []byte(`{"version":2,"manifests":{"ops":` + manifest + `},"bindings":[{"source":"telegram","manifest":"ops","users":["42"],"scopes":["-1001"]},{"source":"slack","manifest":"ops","users":["U9"],"scopes":["C9"]}]}`)
 

@@ -15,20 +15,25 @@ import (
 )
 
 func TestKubernetesSecretCallsAreBlocked(t *testing.T) {
+	d := &guardedDispatcher{k8sTools: map[string]struct{}{"cluster": {}}}
 	cases := []dispatcher.Call{
-		{Name: "k8s.get", Args: json.RawMessage(`{"kind":"Secret"}`)},
-		{Name: "k8s.list", Args: json.RawMessage(`{"kind":"secret"}`)},
-		{Name: "k8s.apply", Args: json.RawMessage(`{"resource":{"kind":"Secret"}}`)},
+		{Name: "cluster", Args: json.RawMessage(`{"verb":"get","kind":"Secret"}`)},
+		{Name: "cluster", Args: json.RawMessage(`{"verb":"list","kind":"secret"}`)},
+		{Name: "cluster", Args: json.RawMessage(`{"verb":"apply","resource":{"kind":"Secret"}}`)},
 	}
 	for _, call := range cases {
-		if !isKubernetesSecretCall(call) {
-			t.Fatalf("%s was not blocked", call.Name)
+		if !d.isKubernetesSecretCall(call) {
+			t.Fatalf("%s was not blocked", call.Args)
 		}
 	}
-	if isKubernetesSecretCall(dispatcher.Call{
-		Name: "k8s.get", Args: json.RawMessage(`{"kind":"Deployment"}`),
+	if d.isKubernetesSecretCall(dispatcher.Call{
+		Name: "cluster", Args: json.RawMessage(`{"verb":"get","kind":"Deployment"}`),
 	}) {
 		t.Fatal("Deployment was blocked")
+	}
+	// A non-k8s tool name is never treated as a secret call.
+	if d.isKubernetesSecretCall(dispatcher.Call{Name: "other", Args: json.RawMessage(`{"kind":"Secret"}`)}) {
+		t.Fatal("non-k8s tool was blocked")
 	}
 }
 
@@ -166,8 +171,8 @@ func TestNewDispatcherFileBasedPathSkipsWarmup(t *testing.T) {
 	// With no registrations, Build will fail on an unknown capability, but
 	// the error must NOT be a "no warmup entry" error.
 	manifest := aurora.Manifest{
-		Version:      aurora.ManifestVersion,
-		Capabilities: []aurora.CapabilityConfig{{Name: "nonexistent"}},
+		Version: aurora.ManifestVersion,
+		Tools:   []aurora.Tool{{Name: "nonexistent", Type: "core.nonexistent"}},
 	}
 	_, err := p.NewDispatcher(context.Background(), aurora.RunContext{}, manifest)
 	if err != nil && err.Error() == `no warmup entry for binding "": call Warmup before dispatching` {

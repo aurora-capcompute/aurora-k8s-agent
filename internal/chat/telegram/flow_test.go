@@ -117,7 +117,7 @@ func TestPromptCreatesRun(t *testing.T) {
 	  "users":{
 	    "42":{
 	      "allowed_chats":[42],
-	      "manifest":{"version":2,"brain":"kubernetes-agent","capabilities":[{"name":"k8s.get"}]}
+	      "manifest":{"version":2,"brain":"kubernetes-agent","tools":[{"name":"cluster","type":"core.k8s","settings":{}}]}
 	    }
 	  }
 	}`), flowProvider{})

@@ -36,7 +36,7 @@ const samplePolicy = `{
       "manifest": {
         "version": 2,
         "brain": "aurora-agent",
-        "capabilities": [{"name": "openai.chat"}]
+        "tools": [{"name": "llm", "type": "core.test"}]
       }
     }
   }

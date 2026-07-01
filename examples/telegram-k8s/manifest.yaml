@@ -32,8 +32,15 @@ spec:
     value: >-
       You are Aurora, a Kubernetes operator. Inspect current state before making
       changes, summarize intended mutations, and never read Secrets.
-  capabilities:
-    - name: openai.chat
+  # Unified tool composition: each tool has a name (the brain's routing handle),
+  # a type (which dispatcher), and settings. The LLM is an ordinary tool marked
+  # hidden so it stays off the brain's discoverable menu. k8s/helm each expose a
+  # single tool whose `permissions` allowlist gates the verbs the brain may use;
+  # mutating verbs (apply/delete/upgrade/uninstall) require approval by default.
+  tools:
+    - name: llm
+      type: core.openaiApi
+      hidden: true
       settings:
         base_url:
           type: literal
@@ -47,46 +54,30 @@ spec:
         allowed_models:
           type: literal
           value: ["gpt-4.1"]
-        require_approval:
+    - name: cluster
+      type: core.k8s
+      settings:
+        permissions:
           type: literal
-          value: false
-    - name: k8s.get
+          value:
+            - {resource: "*", verb: get, namespace: default}
+            - {resource: "*", verb: list, namespace: default}
+            - {resource: "*", verb: logs, namespace: default}
+            - {resource: "*", verb: events, namespace: default}
+            - {resource: "*", verb: apply, namespace: default}
+            - {resource: "*", verb: delete, namespace: default}
+    - name: releases
+      type: core.helm
       settings:
-        namespaces: {type: literal, value: [default]}
-    - name: k8s.list
-      settings:
-        namespaces: {type: literal, value: [default]}
-    - name: k8s.logs
-      settings:
-        namespaces: {type: literal, value: [default]}
-    - name: k8s.events
-      settings:
-        namespaces: {type: literal, value: [default]}
-    - name: k8s.apply
-      settings:
-        namespaces: {type: literal, value: [default]}
-        require_approval: {type: literal, value: true}
-    - name: k8s.delete
-      settings:
-        namespaces: {type: literal, value: [default]}
-        require_approval: {type: literal, value: true}
-    - name: helm.list
-      settings:
-        namespaces: {type: literal, value: [default]}
-    - name: helm.status
-      settings:
-        namespaces: {type: literal, value: [default]}
-    - name: helm.get_values
-      settings:
-        namespaces: {type: literal, value: [default]}
-    - name: helm.upgrade
-      settings:
-        namespaces: {type: literal, value: [default]}
-        require_approval: {type: literal, value: true}
-    - name: helm.uninstall
-      settings:
-        namespaces: {type: literal, value: [default]}
-        require_approval: {type: literal, value: true}
-    - name: timer.set
+        permissions:
+          type: literal
+          value:
+            - {verb: list, namespace: default}
+            - {verb: status, namespace: default}
+            - {verb: get_values, namespace: default}
+            - {resource: "*", verb: upgrade, namespace: default}
+            - {resource: "*", verb: uninstall, namespace: default}
+    - name: timer
+      type: core.timer
       settings:
         max_duration_ms: {type: literal, value: 86400000}

@@ -31,8 +31,8 @@ func (testProvider) IsSubset(string, json.RawMessage, json.RawMessage) error { r
 const sample = `{
   "version": 2,
   "manifests": {
-    "ops": {"version": 2, "brain": "kubernetes-agent", "capabilities": [{"name": "openai.chat"}]},
-    "readonly": {"version": 2, "brain": "kubernetes-agent", "capabilities": [{"name": "openai.chat"}]}
+    "ops": {"version": 2, "brain": "kubernetes-agent", "tools": [{"name": "llm", "type": "core.test"}]},
+    "readonly": {"version": 2, "brain": "kubernetes-agent", "tools": [{"name": "llm", "type": "core.test"}]}
   },
   "bindings": [
     {"source": "telegram", "manifest": "ops", "users": ["123", "456"], "scopes": ["-100999"]},
