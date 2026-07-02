@@ -3,13 +3,13 @@ module github.com/aurora-capcompute/aurora-k8s-agent
 go 1.26.0
 
 require (
-	github.com/aurora-capcompute/aurora-capcompute v0.0.0-20260629161353-f5d77c15d56a
-	github.com/aurora-capcompute/aurora-dispatchers v0.0.0-20260629161346-52a96ac6ce45
+	github.com/aurora-capcompute/aurora-capcompute v0.0.0-20260701232224-07cccd7b3210
+	github.com/aurora-capcompute/aurora-dispatchers v0.0.0-20260701232021-fbbb9a00f7aa
 	github.com/aurora-capcompute/aurora-dispatchers-helm v0.0.0-20260629161724-95ab154917c6
 	github.com/aurora-capcompute/aurora-dispatchers-k8s v0.0.0-20260629161726-99e98510a775
 	github.com/aurora-capcompute/aurora-dispatchers-llm v0.0.0-20260629161728-89f9917b4689
 	github.com/aurora-capcompute/aurora-stores v0.0.0-20260629161752-bfe30a60b688
-	github.com/aurora-capcompute/capcompute v0.0.0-20260628011649-3614a522a3b9
+	github.com/aurora-capcompute/capcompute v0.0.0-20260701232001-70342592963d
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/mattn/go-sqlite3 v1.14.47
 	github.com/opencontainers/image-spec v1.1.1

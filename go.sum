@@ -1,7 +1,7 @@
-github.com/aurora-capcompute/aurora-capcompute v0.0.0-20260629161353-f5d77c15d56a h1:EugVeUOWcHo5/rC9mWChRXlw7BgXjayZrjF0uVPoHx0=
-github.com/aurora-capcompute/aurora-capcompute v0.0.0-20260629161353-f5d77c15d56a/go.mod h1:SZ0HrOMfCVx3uBpiZNJyg6/M3xY+7ndVMWKv0PaEJTA=
-github.com/aurora-capcompute/aurora-dispatchers v0.0.0-20260629161346-52a96ac6ce45 h1:NutDdHyPUyDfXDk2LztgjlqSBvbpjnE4Ienr63x0PhU=
-github.com/aurora-capcompute/aurora-dispatchers v0.0.0-20260629161346-52a96ac6ce45/go.mod h1:KWmwX3cgtkGXreqN/HU9d+ML6eyDFfwIrU8528XKWEk=
+github.com/aurora-capcompute/aurora-capcompute v0.0.0-20260701232224-07cccd7b3210 h1:M90zrLkWwWnAex7V5eO0mM33iaihmPNRyfqSSYFIxs8=
+github.com/aurora-capcompute/aurora-capcompute v0.0.0-20260701232224-07cccd7b3210/go.mod h1:ZisKtAuapk46xml/eSnzQYHb7ZLngVr0mz0I6avVm+A=
+github.com/aurora-capcompute/aurora-dispatchers v0.0.0-20260701232021-fbbb9a00f7aa h1:OJfy91CyWLrCcIBuR9SUVs5X/hAS6zQRzNuwrNN+rao=
+github.com/aurora-capcompute/aurora-dispatchers v0.0.0-20260701232021-fbbb9a00f7aa/go.mod h1:DBtCGJaSn6mJTLz4l/J02OUONTeyQM13RYQhCy0CIMc=
 github.com/aurora-capcompute/aurora-dispatchers-helm v0.0.0-20260629161724-95ab154917c6 h1:DTX83aZlju8ltrF5/JNprf58EZn9i6wQLKyvEJAUplA=
 github.com/aurora-capcompute/aurora-dispatchers-helm v0.0.0-20260629161724-95ab154917c6/go.mod h1:wn+UZm8jCWOAnoVkuUJj6YAIunsxfSKPbTgEXocJnEc=
 github.com/aurora-capcompute/aurora-dispatchers-k8s v0.0.0-20260629161726-99e98510a775 h1:VNTMhGoOZZh52kxgkHrOLppSbLMAMXRx1Aq2SeQVhtM=
@@ -10,8 +10,8 @@ github.com/aurora-capcompute/aurora-dispatchers-llm v0.0.0-20260629161728-89f991
 github.com/aurora-capcompute/aurora-dispatchers-llm v0.0.0-20260629161728-89f9917b4689/go.mod h1:OigwCdUCdaElGIr/Q8O4+aSEInBlIY1pm63YsywGKXM=
 github.com/aurora-capcompute/aurora-stores v0.0.0-20260629161752-bfe30a60b688 h1:qk7NeLqrW4beyMfcmUrx1jM5O373Ej6AmgtPqq6MBU0=
 github.com/aurora-capcompute/aurora-stores v0.0.0-20260629161752-bfe30a60b688/go.mod h1:7px0K6x8T6Y9d//VXKYs+qSkHEZsg5Z6iaOCVz2z+tQ=
-github.com/aurora-capcompute/capcompute v0.0.0-20260628011649-3614a522a3b9 h1:cyk4X3EB9dIJ7eQDtwC3IgwHn5QQtqWfvkQgT3T/mW0=
-github.com/aurora-capcompute/capcompute v0.0.0-20260628011649-3614a522a3b9/go.mod h1:mj6yFasv226xeH9QkiUm72zWDEhTlWAFks4IfWj/C0Y=
+github.com/aurora-capcompute/capcompute v0.0.0-20260701232001-70342592963d h1:+DLX3HNrCcOqPbtq8pggP4qqBvfInDRUaKn8UIEduCY=
+github.com/aurora-capcompute/capcompute v0.0.0-20260701232001-70342592963d/go.mod h1:+o8UOYGFnEk4e5wFqBGzB7srXbvL73T16se+O0ZBI1I=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -48,6 +48,7 @@ github.com/go-openapi/swag/jsonname v0.26.1/go.mod h1:OvdW6BoWoj33pTfi7x9vFrgmT+
 github.com/go-openapi/swag/jsonutils v0.26.1 h1:2hdBfFkHg+7Wrz2VsCbeyR6hzkRDs7AztnMR2u84yOY=
 github.com/go-openapi/swag/jsonutils v0.26.1/go.mod h1:U+RMJH3wa+6BRiphuRtIyI8fW9HPFqFQ4sHk2oRx0UQ=
 github.com/go-openapi/swag/jsonutils/fixtures_test v0.26.1 h1:1CD7NiLLb/TXl3tOnFYU4b+mNfb5rtgHkaA+q7RMYYQ=
+github.com/go-openapi/swag/jsonutils/fixtures_test v0.26.1/go.mod h1:ZWafc8nMdYzTE3uYY6W86f0n46+IF0g4uUyRhJw/kXc=
 github.com/go-openapi/swag/loading v0.26.1 h1:E9K4wqXeROlhjFQ13K9zMz6ojFGXIggGe+ad1odrK9w=
 github.com/go-openapi/swag/loading v0.26.1/go.mod h1:3qvRIlWzWdq1HvmldwmuJ2ohpcAryN6xVt2OTKd0/7E=
 github.com/go-openapi/swag/mangling v0.26.1 h1:gpYI4WuPKFJJVjV5cDLGlDVJhFIxYjQc7yN5eEb4CqM=
@@ -61,7 +62,9 @@ github.com/go-openapi/swag/typeutils v0.26.1/go.mod h1:VfnV+oUtSP2vCSCn2aJgnr8Oe
 github.com/go-openapi/swag/yamlutils v0.26.1 h1:0TSLK+lXs9vfIhAWzBeI/lOzEnIoot6WTCO1aAeWFTk=
 github.com/go-openapi/swag/yamlutils v0.26.1/go.mod h1:7W5b7PRX9MxwL7TjeG7H8HkyBGRsIDRObhyMWFgBI2M=
 github.com/go-openapi/testify/enable/yaml/v2 v2.5.1 h1:q9NtHwK4qHF7yZziBPvZyv7zWAIk8ok88Gh2mR6Jpc8=
+github.com/go-openapi/testify/enable/yaml/v2 v2.5.1/go.mod h1:JW0MXIotCYps/XsgJnG3a8Q7rE5xAiBwoOD5OfaIQBk=
 github.com/go-openapi/testify/v2 v2.6.0 h1:5PKH2HE7YJ/LuRPQGvSxBRlFXNQhSetBLlGAgUEu3ug=
+github.com/go-openapi/testify/v2 v2.6.0/go.mod h1:SgsVHtfooshd0tublTtJ50FPKhujf47YRqauXXOUxfw=
 github.com/go-test/deep v1.1.1 h1:0r/53hagsehfO4bzD2Pgr/+RgHqhmf+k1Bpse2cTu1U=
 github.com/go-test/deep v1.1.1/go.mod h1:5C2ZWiW0ErCdrYzpqxLbTX7MG14M9iiw8DgHncVwcsE=
 github.com/gobwas/glob v0.2.3 h1:A4xDbljILXROh+kObIiy5kIaPYD8e96x1tgBhUI5J+Y=
@@ -103,6 +106,7 @@ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZN
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0tI/otEQ=
+github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/slack-go/slack v0.27.0 h1:VWOpUzOK6UAPCCQlFxl79jhv8a/b+GOSJMnWziDJ8B8=
 github.com/slack-go/slack v0.27.0/go.mod h1:UEe+jmo9WLlwHB04qsOrTDvqM7Aa4rQL3O5wF3n0hx4=
 github.com/spf13/pflag v1.0.10 h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=
