@@ -62,3 +62,31 @@ plus a branch in `cmd`. See `docs/rfc-sources-and-bindings.md` for the staged pl
 - Secrets never appear in Aurora manifests — use `api_key_env` references.
 - The guarded dispatcher blocks Secret operations at the dispatch level.
 - Mutating capabilities should require explicit per-operation approval.
+
+## Pending migration: capcompute OS-vocabulary rename
+
+The `capcompute` library renamed its API to OS-domain vocabulary on branch
+`claude/wasm-os-architecture-kjzmkq` (Session→Process, SessionStore→ProcessTable,
+ComputeCompiledPlugin→Kernel, Play→Resume, dispatcher package→sys with
+Call→Syscall / Outcome→SyscallResult), and renamed the guest-facing host
+function from `play` to `syscall` (namespace `extism:host/compute` unchanged,
+no backwards compatibility).
+
+This repo intentionally still pins the pre-rename capcompute. It consumes the
+core API transitively through `aurora-capcompute/aurora-capcompute` and
+`aurora-stores`, which must migrate first — Go resolves one capcompute version
+per build, so bumping the pin here before those modules migrate would break
+compilation. The old pin keeps the whole assembly (host + deployed brains
+speaking the `play` wire name) internally consistent.
+
+Migration checklist when the upstream modules are ready:
+
+1. bump `capcompute`, `aurora-capcompute`, `aurora-stores` (and
+   `aurora-dispatchers*`, already migrated) together;
+2. update the direct `dispatcher.*` references (one production file,
+   `internal/assembly/provider.go`, plus test files) to `sys.Syscall` /
+   `sys.SyscallResult` / `.Status()`;
+3. swap `memory.NewSessionStore` / `aurora.Config.SessionStore` for the
+   renamed table in `cmd/aurora-k8s-agent/main.go`;
+4. rebuild and redeploy brains against the `syscall` host import (aurora-brains
+   is already updated) — old brains will not run on the new host.
