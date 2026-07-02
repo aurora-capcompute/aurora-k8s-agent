@@ -89,4 +89,20 @@ Migration checklist when the upstream modules are ready:
 3. swap `memory.NewSessionStore` / `aurora.Config.SessionStore` for the
    renamed table in `cmd/aurora-k8s-agent/main.go`;
 4. rebuild and redeploy brains against the `syscall` host import (aurora-brains
-   is already updated) — old brains will not run on the new host.
+   is already updated) — old brains will not run on the new host;
+5. adopt ABI v2 (capcompute `sys.ABIVersion = 2`): every syscall carries
+   `"abi": 2` and failures carry a machine-readable `code` errno; the reserved
+   savepoint names moved `host.try`/`host.commit` → `sys.begin`/`sys.commit`
+   (`sys.SyscallBegin`/`SyscallCommit`) — the runtime's savepointDispatcher and
+   journal fork logic must recognize the new names (both brains already emit
+   them);
+6. the kernel now rejects images with `allowed_hosts`/`allowed_paths`
+   (`ErrAmbientAuthority`) and owns guest module config (pinned deterministic
+   WASI clock/RNG) — remove any such settings from plugin manifests; network
+   and filesystem access must be dispatched capabilities;
+7. `capcompute.Config` renamed `Manifest` → `Image` and dropped
+   `InstanceConfig`; `journaled.NewTape` now takes a `Header{ABI, Program}`
+   (stamp = artifact digest) and refuses mismatched journals with
+   `ReplayIncompatibleError`. When migrating, follow the OS-convention naming
+   for manifest vocabulary (program image, capabilities, processes) in the
+   Manifest CRD as well.
